@@ -1,0 +1,275 @@
+version 3
+run General-0-20251024-19:55:40-4564
+attr configname General
+attr datetime 20251024-19:55:40
+attr datetimef 20251024-195540
+attr experiment General
+attr inifile omnetpp.ini
+attr iterationvars ""
+attr iterationvarsd ""
+attr iterationvarsf ""
+attr measurement ""
+attr network ExtInterfaceTest
+attr processid 4564
+attr repetition 0
+attr replication #0
+attr resultdir results
+attr runnumber 0
+attr seedset 0
+config image-path ../inet4.5/images
+config network ExtInterfaceTest
+config scheduler-class inet::RealTimeScheduler
+config sim-time-limit 20s
+config *.*.eth[*].bitrate 100Mbps
+config *.configurator.config "xml(\"<config>                                 <interface hosts='server' names='eth0' address='192.168.74.144' netmask='255.255.255.0'/> \t\t\t\t\t\t\t\t<route hosts='server' destination='192.168.74.1' netmask='255.255.255.255' gateway='192.168.74.2' interface='eth0' metric='0'/>                              </config>\")"
+config *.server.numEthInterfaces 1
+config *.server.eth[0].typename ExtLowerEthernetInterface
+config *.server.eth[*].device "\"ens33\""
+config *.server.eth[0].mtu 1500B
+config *.server.interfaceTable.displayAddresses true
+config *.server.eth[*].copyConfiguration "\"copyFromExt\""
+config *.server.ipv4.arp.typename Arp
+config *.server.numApps 1
+config *.server.app[0].typename ModbusMasterApp
+config *.server.app[0].numConnect 1
+config *.server.app[0].configFile "\"ModbusStorageConfig.json\""
+config *.server.app[0].readInterval 1s
+config **.crcMode "\"computed\""
+config **.fcsMode "\"computed\""
+config *.server.numPcapRecorders 1
+config *.server.pcapRecorder[*].pcapFile "\"results/server.pcap\""
+config *.visualizer.interfaceTableVisualizer.displayInterfaceTables true
+
+vector 0 ExtInterfaceTest.server.ethernet encapPk:vector(packetBytes) ETV
+attr interpolationmode none
+attr recordingmode vector(packetBytes)
+attr source encapPk
+attr title "packets encapsulated, packetBytes"
+vector 1 ExtInterfaceTest.server.ethernet decapPk:vector(packetBytes) ETV
+attr interpolationmode none
+attr recordingmode vector(packetBytes)
+attr source decapPk
+attr title "packets decapsulated, packetBytes"
+vector 2 ExtInterfaceTest.server.ethernet pauseSent:vector ETV
+attr recordingmode vector
+attr title "pause sent"
+vector 3 ExtInterfaceTest.server.lo[0].lo rcvdPkFromHl:vector(packetBytes) ETV
+attr interpolationmode none
+attr recordingmode vector(packetBytes)
+attr source packetReceivedFromUpper
+attr title "packets received from higher layer, packetBytes"
+vector 4 ExtInterfaceTest.server.lo[0].lo passedUpPk:vector(packetBytes) ETV
+attr interpolationmode none
+attr recordingmode vector(packetBytes)
+attr source packetSentToUpper
+attr title "packets passed to higher layer, packetBytes"
+vector 5 ExtInterfaceTest.server.lo[0] packetDropInterfaceDown:vector(packetBytes) ETV
+attr interpolationmode none
+attr recordingmode vector(packetBytes)
+attr source packetDropReasonIsInterfaceDown(packetDropped)
+attr title "packet drops: interface down, packetBytes"
+vector 6 ExtInterfaceTest.server.lo[0] packetDropNoCarrier:vector(packetBytes) ETV
+attr interpolationmode none
+attr recordingmode vector(packetBytes)
+attr source packetDropReasonIsNoCarrier(packetDropped)
+attr title "packet drops: no carrier, packetBytes"
+vector 7 ExtInterfaceTest.server.eth[0].socket packetSentFromUpper:vector(packetBytes) ETV
+attr interpolationmode none
+attr recordingmode vector(packetBytes)
+attr source packetSentToUpper
+attr title "packets sent to higher layer, packetBytes"
+vector 8 ExtInterfaceTest.server.eth[0].socket packetReceivedFromUpper:vector(packetBytes) ETV
+attr interpolationmode none
+attr recordingmode vector(packetBytes)
+attr source packetReceivedFromUpper
+attr title "packets received from higher layer, packetBytes"
+vector 9 ExtInterfaceTest.server.eth[0].socket packetSent:vector(packetBytes) ETV
+attr interpolationmode none
+attr recordingmode vector(packetBytes)
+attr source packetSent
+attr title "packets sent, packetBytes"
+vector 10 ExtInterfaceTest.server.eth[0].socket packetReceived:vector(packetBytes) ETV
+attr interpolationmode none
+attr recordingmode vector(packetBytes)
+attr source packetReceived
+attr title "packets received, packetBytes"
+vector 11 ExtInterfaceTest.server.eth[0] packetDropInterfaceDown:vector(packetBytes) ETV
+attr interpolationmode none
+attr recordingmode vector(packetBytes)
+attr source packetDropReasonIsInterfaceDown(packetDropped)
+attr title "packet drops: interface down, packetBytes"
+vector 12 ExtInterfaceTest.server.eth[0] packetDropNoCarrier:vector(packetBytes) ETV
+attr interpolationmode none
+attr recordingmode vector(packetBytes)
+attr source packetDropReasonIsNoCarrier(packetDropped)
+attr title "packet drops: no carrier, packetBytes"
+vector 13 ExtInterfaceTest.server.ipv4.ip packetDropAddressResolutionFailed:vector(packetBytes) ETV
+attr interpolationmode none
+attr recordingmode vector(packetBytes)
+attr source packetDropReasonIsAddressResolutionFailed(packetDropped)
+attr title "packet drop: address resolution failed, packetBytes"
+vector 14 ExtInterfaceTest.server.ipv4.ip packetDropHopLimitReached:vector(packetBytes) ETV
+attr interpolationmode none
+attr recordingmode vector(packetBytes)
+attr source packetDropReasonIsHopLimitReached(packetDropped)
+attr title "packet drop: hop limit reached, packetBytes"
+vector 15 ExtInterfaceTest.server.ipv4.ip packetDropForwardingDisabled:vector(packetBytes) ETV
+attr interpolationmode none
+attr recordingmode vector(packetBytes)
+attr source packetDropReasonIsForwardingDisabled(packetDropped)
+attr title "packet drop: forwarding disabled, packetBytes"
+vector 16 ExtInterfaceTest.server.ipv4.ip packetDropNoInterfaceFound:vector(packetBytes) ETV
+attr interpolationmode none
+attr recordingmode vector(packetBytes)
+attr source packetDropReasonIsNoInterfaceFound(packetDropped)
+attr title "packet drop: no interface found, packetBytes"
+vector 17 ExtInterfaceTest.server.ipv4.ip packetDropNoRouteFound:vector(packetBytes) ETV
+attr interpolationmode none
+attr recordingmode vector(packetBytes)
+attr source packetDropReasonIsNoRouteFound(packetDropped)
+attr title "packet drop: no route found, packetBytes"
+vector 18 ExtInterfaceTest.server.ipv4.ip packetDropUndefined:vector(packetBytes) ETV
+attr interpolationmode none
+attr recordingmode vector(packetBytes)
+attr source packetDropReasonIsUndefined(packetDropped)
+attr title "packet drop: undefined, packetBytes"
+vector 19 ExtInterfaceTest.server.ipv4.arp arpRequestSent:vector(packetBytes) ETV
+attr recordingmode vector(packetBytes)
+attr source arpRequestSent
+attr title "ARP request sent, packetBytes"
+vector 20 ExtInterfaceTest.server.ipv4.arp arpReplySent:vector(packetBytes) ETV
+attr recordingmode vector(packetBytes)
+attr source arpReplySent
+attr title "ARP replies sent, packetBytes"
+vector 21 ExtInterfaceTest.server.udp packetSent:vector(packetBytes) ETV
+attr interpolationmode none
+attr recordingmode vector(packetBytes)
+attr source packetSent
+attr title "packets sent, packetBytes"
+vector 22 ExtInterfaceTest.server.udp packetReceived:vector(packetBytes) ETV
+attr interpolationmode none
+attr recordingmode vector(packetBytes)
+attr source packetReceived
+attr title "packets received, packetBytes"
+vector 23 ExtInterfaceTest.server.udp passedUpPk:vector(count) ETV
+attr interpolationmode none
+attr recordingmode vector(count)
+attr source packetSentToUpper
+attr title "packets passed up, count"
+vector 24 ExtInterfaceTest.server.udp droppedPkWrongPort:vector(count) ETV
+attr interpolationmode none
+attr recordingmode vector(count)
+attr source packetDropReasonIsNoPortFound(packetDropped)
+attr title "packets dropped (wrong port), count"
+vector 25 ExtInterfaceTest.server.udp droppedPkBadChecksum:vector(count) ETV
+attr interpolationmode none
+attr recordingmode vector(count)
+attr source packetDropReasonIsIncorrectlyReceived(packetDropped)
+attr title "packets dropped (checksum error), count"
+vector 26 ExtInterfaceTest.server.app[0] packetReceived:vector(packetBytes) ETV
+attr interpolationmode none
+attr recordingmode vector(packetBytes)
+attr source packetReceived
+attr title "接收数据包总数, packetBytes"
+vector 27 ExtInterfaceTest.server.app[0] packetSent:vector(packetBytes) ETV
+attr interpolationmode none
+attr recordingmode vector(packetBytes)
+attr source packetSent
+attr title "发送数据包总数, packetBytes"
+vector 28 ExtInterfaceTest.server.app[0] endToEndDelay:vector ETV
+attr interpolationmode none
+attr recordingmode vector
+attr source dataAge(packetReceived)
+attr title 端到端延迟
+attr unit s
+vector 29 ExtInterfaceTest.server.app[0] numActiveSessions:vector ETV
+attr autoWarmupFilter false
+attr interpolationmode sample-hold
+attr recordingmode vector
+attr source warmup(sum(connect))
+attr title 活跃连接数
+vector 30 ExtInterfaceTest.server.tcp.conn-0 state:vector ETV
+attr interpolationmode sample-hold
+attr recordingmode vector
+vector 31 ExtInterfaceTest.server.tcp.conn-0 sndWnd:vector ETV
+attr interpolationmode sample-hold
+attr recordingmode vector
+vector 32 ExtInterfaceTest.server.tcp.conn-0 rcvWnd:vector ETV
+attr interpolationmode sample-hold
+attr recordingmode vector
+vector 33 ExtInterfaceTest.server.tcp.conn-0 rcvAdv:vector ETV
+attr interpolationmode sample-hold
+attr recordingmode vector
+vector 34 ExtInterfaceTest.server.tcp.conn-0 sndNxt:vector ETV
+attr interpolationmode sample-hold
+attr recordingmode vector
+vector 35 ExtInterfaceTest.server.tcp.conn-0 sndAck:vector ETV
+attr interpolationmode sample-hold
+attr recordingmode vector
+vector 36 ExtInterfaceTest.server.tcp.conn-0 rcvSeq:vector ETV
+attr interpolationmode sample-hold
+attr recordingmode vector
+vector 37 ExtInterfaceTest.server.tcp.conn-0 rcvAck:vector ETV
+attr interpolationmode sample-hold
+attr recordingmode vector
+vector 38 ExtInterfaceTest.server.tcp.conn-0 unacked:vector ETV
+attr interpolationmode sample-hold
+attr recordingmode vector
+vector 39 ExtInterfaceTest.server.tcp.conn-0 dupAcks:vector ETV
+attr interpolationmode sample-hold
+attr recordingmode vector
+vector 40 ExtInterfaceTest.server.tcp.conn-0 pipe:vector ETV
+attr interpolationmode sample-hold
+attr recordingmode vector
+vector 41 ExtInterfaceTest.server.tcp.conn-0 sndSacks:vector ETV
+attr interpolationmode sample-hold
+attr recordingmode vector
+vector 42 ExtInterfaceTest.server.tcp.conn-0 rcvSacks:vector ETV
+attr interpolationmode sample-hold
+attr recordingmode vector
+vector 43 ExtInterfaceTest.server.tcp.conn-0 rcvOooSeg:vector ETV
+attr interpolationmode sample-hold
+attr recordingmode vector
+vector 44 ExtInterfaceTest.server.tcp.conn-0 rcvNASeg:vector ETV
+attr interpolationmode sample-hold
+attr recordingmode vector
+vector 45 ExtInterfaceTest.server.tcp.conn-0 sackedBytes:vector ETV
+attr interpolationmode sample-hold
+attr recordingmode vector
+vector 46 ExtInterfaceTest.server.tcp.conn-0 tcpRcvQueueBytes:vector ETV
+attr interpolationmode sample-hold
+attr recordingmode vector
+vector 47 ExtInterfaceTest.server.tcp.conn-0 tcpRcvQueueDrops:vector ETV
+attr interpolationmode sample-hold
+attr recordingmode vector
+vector 48 ExtInterfaceTest.server.tcp.conn-0 tcpRcvPayloadBytes:vector ETV
+attr interpolationmode sample-hold
+attr recordingmode vector
+vector 49 ExtInterfaceTest.server.tcp.conn-0 cwnd:vector ETV
+attr interpolationmode sample-hold
+attr recordingmode vector
+vector 50 ExtInterfaceTest.server.tcp.conn-0 ssthresh:vector ETV
+attr interpolationmode sample-hold
+attr recordingmode vector
+vector 51 ExtInterfaceTest.server.tcp.conn-0 rtt:vector ETV
+attr interpolationmode sample-hold
+attr recordingmode vector
+vector 52 ExtInterfaceTest.server.tcp.conn-0 srtt:vector ETV
+attr interpolationmode sample-hold
+attr recordingmode vector
+vector 53 ExtInterfaceTest.server.tcp.conn-0 rttvar:vector ETV
+attr interpolationmode sample-hold
+attr recordingmode vector
+vector 54 ExtInterfaceTest.server.tcp.conn-0 rto:vector ETV
+attr interpolationmode sample-hold
+attr recordingmode vector
+vector 55 ExtInterfaceTest.server.tcp.conn-0 numRtos:vector ETV
+attr interpolationmode sample-hold
+attr recordingmode vector
+vector 56 ExtInterfaceTest.server.tcp.conn-0 load:vector ETV
+attr interpolationmode sample-hold
+attr recordingmode vector
+vector 57 ExtInterfaceTest.server.tcp.conn-0 calcLoad:vector ETV
+attr interpolationmode sample-hold
+attr recordingmode vector
+vector 58 ExtInterfaceTest.server.tcp.conn-0 markingProb:vector

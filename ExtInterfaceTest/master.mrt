@@ -1,0 +1,18 @@
+ifconfig:
+
+name: eth
+    inet_addr: 192.168.74.144
+    Mask: 255.255.255.0
+    MTU: 1500
+    Metric: 1
+
+
+ifconfigend.
+
+route:
+#Destination     Gateway          Genmask          Flags  Metric  Iface
+0.0.0.0          *                0.0.0.0          G      1       eth0
+113.54.160.0	 192.168.74.2     255.255.224.0   G	  0		  eth0
+
+routeend.
+
