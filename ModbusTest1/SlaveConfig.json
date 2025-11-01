@@ -1,0 +1,84 @@
+{
+  "connectArray": [
+    {
+      "ipAddress": "10.0.0.7",
+      "numSlave": 2,
+      "slaves": [
+        {
+          "slaveId": 1,
+          "numBitGroup": 1,
+          "numInputBitGroup": 0,
+          "numRegisterGroup": 1,
+          "numInputRegisterGroup": 0,
+          "bitGroup": [
+            {
+              "startAddress": 0,
+              "number": 4,
+              "data": [1, 0, 1, 0]
+            }
+          ],
+          "inputBitGroup": [],
+          "registerGroup": [
+            {
+              "startAddress": 10,
+              "number": 10,
+              "data": [4660, 22136, 0, 0, 0, 0, 0, 0, 0, 0]
+            }
+          ],
+          "inputRegisterGroup": []
+        },
+        {
+          "slaveId": 2,
+          "numBitGroup": 0,
+          "numInputBitGroup": 1,
+          "numRegisterGroup": 0,
+          "numInputRegisterGroup": 1,
+          "bitGroup": [],
+          "inputBitGroup": [
+            {
+              "startAddress": 5,
+              "number": 2,
+              "data": [1, 1]
+            }
+          ],
+          "registerGroup": [],
+          "inputRegisterGroup": [
+            {
+              "startAddress": 20,
+              "number": 3,
+              "data": [100, 200, 300]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "ipAddress": "10.0.0.5",
+      "numSlave": 1,
+      "slaves": [
+        {
+          "slaveId": 3,
+          "numBitGroup": 2,
+          "numInputBitGroup": 0,
+          "numRegisterGroup": 0,
+          "numInputRegisterGroup": 0,
+          "bitGroup": [
+            {
+              "startAddress": 100,
+              "number": 8,
+              "data": [0, 0, 1, 0, 1, 1, 0, 1]
+            },
+            {
+              "startAddress": 200,
+              "number": 2,
+              "data": [1, 0]
+            }
+          ],
+          "inputBitGroup": [],
+          "registerGroup": [],
+          "inputRegisterGroup": []
+        }
+      ]
+    }
+  ]
+}

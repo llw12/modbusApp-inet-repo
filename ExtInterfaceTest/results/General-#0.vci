@@ -1,9 +1,9 @@
-file 14615 1761306974                                           
+file 47064 1761659726                                           
 version 3
-run General-0-20251024-19:55:40-4564
+run General-0-20251028-21:55:06-14534
 attr configname General
-attr datetime 20251024-19:55:40
-attr datetimef 20251024-195540
+attr datetime 20251028-21:55:06
+attr datetimef 20251028-215506
 attr experiment General
 attr inifile omnetpp.ini
 attr iterationvars ""
@@ -11,25 +11,36 @@ attr iterationvarsd ""
 attr iterationvarsf ""
 attr measurement ""
 attr network ExtInterfaceTest
-attr processid 4564
+attr processid 14534
 attr repetition 0
 attr replication #0
 attr resultdir results
 attr runnumber 0
 attr seedset 0
-config image-path ../inet4.5/images
+config image-path ../../inet4.5/images
 config network ExtInterfaceTest
 config scheduler-class inet::RealTimeScheduler
 config sim-time-limit 20s
 config *.*.eth[*].bitrate 100Mbps
-config *.configurator.config "xml(\"<config>                                 <interface hosts='server' names='eth0' address='192.168.74.144' netmask='255.255.255.0'/> \t\t\t\t\t\t\t\t<route hosts='server' destination='192.168.74.1' netmask='255.255.255.255' gateway='192.168.74.2' interface='eth0' metric='0'/>                              </config>\")"
+config *.configurator.config "xml(\"<config>                                 <interface hosts='server' names='eth0' address='192.168.43.10' netmask='255.255.255.0'/> \t\t\t\t\t\t\t\t<route hosts='server' destination='192.168.43.203' netmask='255.255.255.255' gateway='192.168.43.1' interface='eth0' metric='0'/>                              </config>\")"
 config *.server.numEthInterfaces 1
 config *.server.eth[0].typename ExtLowerEthernetInterface
-config *.server.eth[*].device "\"ens33\""
+config *.server.eth[0].device "\"ens33\""
 config *.server.eth[0].mtu 1500B
 config *.server.interfaceTable.displayAddresses true
-config *.server.eth[*].copyConfiguration "\"copyFromExt\""
+config *.server.eth[0].copyConfiguration "\"copyFromExt\""
 config *.server.ipv4.arp.typename Arp
+config **.tcp.typename Tcp
+config **.tcp.advertisedWindow 65535
+config **.tcp.delayedAcksEnabled false
+config **.tcp.nagleEnabled false
+config **.tcp.limitedTransmitEnabled true
+config **.tcp.increasedIWEnabled true
+config **.tcp.sackSupport true
+config **.tcp.windowScalingSupport true
+config **.tcp.timestampSupport true
+config **.tcp.mss 1452
+config **.tcp.tcpAlgorithmClass "\"TcpReno\""
 config *.server.numApps 1
 config *.server.app[0].typename ModbusMasterApp
 config *.server.app[0].numConnect 1
@@ -276,22 +287,35 @@ attr recordingmode vector
 vector 58 ExtInterfaceTest.server.tcp.conn-0 markingProb:vector ETV
 attr interpolationmode sample-hold
 attr recordingmode vector
-0	12354 181 8 99 0.835556816 11.635940905 9 28 28 252 7056
-1	12535 124 44 109 4.808563596 12.62418414 6 46 76 336 20016
-7	12659 124 43 108 4.807760902 12.623079958 6 64 94 444 34056
-8	12783 182 9 100 0.929536685 11.743900111 9 46 46 414 19044
-9	12965 182 9 100 0.929536685 11.743900111 9 46 46 414 19044
-10	13147 130 43 108 4.807760902 12.623079958 6 64 94 444 34056
-13	13277 35 28 104 3 12 3 44 44 132 5808
-15	13312 32 45 55 4.943133965 6 2 76 76 152 11552
-19	13344 100 3 94 0 11 9 28 28 252 7056
-23	13444 9 0 0 0 0 1 0 0 0 0
-24	13453 9 0 0 0 0 1 0 0 0 0
-25	13462 9 0 0 0 0 1 0 0 0 0
-27	13471 1000 2 146 0 20 84 12 12 1008 12096
-29	14471 9 0 0 0 0 1 0 0 0 0
-32	14480 38 1 72 0 9 3 7504 7504 22512 168930048
-33	14518 38 1 72 0 9 3 7504 7504 22512 168930048
-35	14556 29 1 72 0 9 3 0 0 0 0
-46	14585 29 1 72 0 9 3 0 0 0 0
+0	12752 721 5 722 0 20 44 28 64 2500 145264
+1	13473 4736 8 711 0.076889218 19.001935098 224 46 2628 48487 48346139
+7	18209 5570 7 710 0.076889218 19.001935098 263 64 2646 56305 50572423
+8	23779 721 7 723 0 20 44 46 82 3292 249520
+9	24500 721 7 723 0 20 44 46 82 3292 249520
+10	25221 5833 7 710 0.076889218 19.001935098 263 64 2646 56305 50572423
+15	31054 4457 44 704 1.109541843 18.728474005 201 40 2628 46599 48217081
+19	35511 10 3 3 0 0 1 28 28 28 784
+20	35521 21 13 13 0.078338001 0.078338001 1 28 28 28 784
+23	35542 9 0 0 0 0 1 0 0 0 0
+24	35551 9 0 0 0 0 1 0 0 0 0
+25	35560 9 0 0 0 0 1 0 0 0 0
+26	35569 442 26 714 0.10182447 19.001935098 20 10 15 240 2970
+27	36011 260 4 719 0 20 21 12 12 252 3024
+29	36271 29 0 20 0 0.079082115 2 0 1 1 1
+31	36300 546 18 713 0.079082115 19.001935098 21 65535 525568 10572287 5523886833665
+32	36846 849 1 720 0 20 42 65535 65535 2752470 180383121450
+33	37695 1083 1 720 0 20 43 65535 3369246534 141508414863 4.7677649832656e+20
+35	38778 1050 1 720 0 20 42 0 3369180999 138136416099 4.6540657201649e+20
+36	39828 631 18 713 0.079082115 19.001935098 21 3369180758 3369180984 70752798188 2.3837897387771e+20
+37	40459 474 18 713 0.079082115 19.001935098 21 1 241 2541 418341
+38	40933 693 18 720 0.079082115 20 41 0 12 252 3024
+39	41626 422 25 713 0.10182447 19.001935098 20 0 0 0 0
+46	42048 1103 1 720 0 20 62 0 0 0 0
+48	43151 462 18 713 0.079082115 19.001935098 21 0 15 240 2970
+49	43613 499 25 713 0.10182447 19.001935098 20 5832 33420 392520 9105619680
+50	44112 602 25 713 0.10182447 19.001935098 20 4294967295 4294967295 85899345900 3.6893488130239e+20
+51	44714 502 25 713 0.10182447 19.001935098 20 0.001 0.022 0.058 0.000566
+52	45216 669 25 713 0.10182447 19.001935098 20 0.00190203629 0.00291796875 0.044634399256 0.00010171780344633
+53	45885 667 25 713 0.10182447 19.001935098 20 0.052711032284 0.659 4.916759576809 1.8479130763858
+54	46552 511 25 713 0.10182447 19.001935098 20 1 2.63875 25.874734191062 38.254278021596
 

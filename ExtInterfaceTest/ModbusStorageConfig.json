@@ -1,7 +1,7 @@
 {
   "connectArray": [
     {
-      "ipAddress": "192.168.74.1",
+      "ipAddress": "192.168.43.203",
       "numSlave": 2,
       "slaves": [
         {

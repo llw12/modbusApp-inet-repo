@@ -1,0 +1,44 @@
+{
+    "connectArray": [
+        {
+            "ipAddress": "10.0.0.5",
+            "numSlave": 1,
+            "slaves": [
+                {
+                    "slaveId": 3,
+                    "numBitGroup": 2,
+                    "numInputBitGroup": 0,
+                    "numRegisterGroup": 0,
+                    "numInputRegisterGroup": 0,
+                    "bitGroup": [
+                        {
+                            "startAddress": 100,
+                            "number": 8,
+                            "data": [
+                                0,
+                                0,
+                                1,
+                                0,
+                                1,
+                                1,
+                                0,
+                                1
+                            ]
+                        },
+                        {
+                            "startAddress": 200,
+                            "number": 2,
+                            "data": [
+                                1,
+                                0
+                            ]
+                        }
+                    ],
+                    "inputBitGroup": [],
+                    "registerGroup": [],
+                    "inputRegisterGroup": []
+                }
+            ]
+        }
+    ]
+}

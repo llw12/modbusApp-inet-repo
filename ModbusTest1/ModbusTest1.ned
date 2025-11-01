@@ -24,7 +24,7 @@ network ModbusTest1 extends TsnNetworkBase
         client[numClients]: TsnDevice {
             @display("p=652,329,r,80");
         }
-    connections:
+    connections allowunconnected:
         operatorStation.ethg++ <--> EthernetLink <--> switch1.ethg++;
         operatorStation.ethg++ <--> EthernetLink <--> switch2.ethg++;
         switch1.ethg++ <--> EthernetLink <--> switch2.ethg++;
