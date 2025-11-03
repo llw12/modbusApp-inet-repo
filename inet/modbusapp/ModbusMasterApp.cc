@@ -193,7 +193,7 @@ void ModbusMasterApp::generateQueryPacket(std::map<int, ChunkQueue>& sendSocketQ
                 auto pkt = createRequest(slave.slaveId, 0x01,
                                          group.startAddress, group.number);
                 addPacketToQueue(pkt, conn.socketId);
-                delete pkt;  // 释放临时创建的数据包
+                // ownership of pkt is taken and it is deleted inside addPacketToQueue
             }
 
             // 读取离散输入组（功能码0x02）
@@ -202,7 +202,7 @@ void ModbusMasterApp::generateQueryPacket(std::map<int, ChunkQueue>& sendSocketQ
                 auto pkt = createRequest(slave.slaveId, 0x02,
                                          group.startAddress, group.number);
                 addPacketToQueue(pkt, conn.socketId);
-                delete pkt;
+                // ownership moved to addPacketToQueue
             }
 
             // 读取保持寄存器组（功能码0x03）
@@ -211,7 +211,7 @@ void ModbusMasterApp::generateQueryPacket(std::map<int, ChunkQueue>& sendSocketQ
                 auto pkt = createRequest(slave.slaveId, 0x03,
                                          group.startAddress, group.number);
                 addPacketToQueue(pkt, conn.socketId);
-                delete pkt;
+                // ownership moved to addPacketToQueue
             }
 
             // 读取输入寄存器组（功能码0x04）
@@ -220,7 +220,7 @@ void ModbusMasterApp::generateQueryPacket(std::map<int, ChunkQueue>& sendSocketQ
                 auto pkt = createRequest(slave.slaveId, 0x04,
                                          group.startAddress, group.number);
                 addPacketToQueue(pkt, conn.socketId);
-                delete pkt;
+                // ownership moved to addPacketToQueue
             }
         }
     }
@@ -367,18 +367,34 @@ void ModbusMasterApp::addPacketToQueue(Packet* pkt, int socketId){
     // 关键：切换到ModbusMasterApp的上下文，记录调试信息
     Enter_Method("addPacketToQueue");
 
-    // 关键：获取消息所有权（若消息来自TransitApp，其所有者可能是TransitApp）
-    take(pkt); // 将消息所有者重新绑定为当前模块（ModbusMasterApp）
-
+//    // 关键：获取消息所有权（若消息来自TransitApp，其所有者可能是TransitApp）
+//-    take(pkt); // 将消息所有者重新绑定为当前模块（ModbusMasterApp）
+//-
+//-    auto socket = socketMap.getSocketById(socketId);
+//-
+//-    if (socket) {
+//-        int socketId = socket->getSocketId();
+//-        auto chunk = pkt->peekDataAt(B(0), pkt->getTotalLength());
+//-        sendSocketQueue[socketId].push(chunk);
+//-        EV_INFO << "packet成功加入队列" << endl;
+//-        return;
+//-    }
+//-    throw cRuntimeError("未找到socketId对应的socket,packet未加入队列");
+    // Don't change packet owner here; just extract the data chunk and then free the packet
     auto socket = socketMap.getSocketById(socketId);
 
     if (socket) {
-        int socketId = socket->getSocketId();
+        int sid = socket->getSocketId();
+        // extract data chunk (this returns a shared chunk that remains valid after deleting the packet)
         auto chunk = pkt->peekDataAt(B(0), pkt->getTotalLength());
-        sendSocketQueue[socketId].push(chunk);
-        EV_INFO << "packet成功加入队列" << endl;
+        sendSocketQueue[sid].push(chunk);
+        EV_INFO << "packet成功加入队列 (socketId=" << sid << ")" << endl;
+        // delete the temporary Packet to avoid leaving it undisposed
+        delete pkt;
         return;
     }
+    // if socket not found, delete the packet to avoid leak and report error
+    delete pkt;
     throw cRuntimeError("未找到socketId对应的socket,packet未加入队列");
 }
 

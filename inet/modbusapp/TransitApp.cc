@@ -244,14 +244,14 @@ void TransitApp::handleMessage(cMessage *msg)
                         auto exceptionPduChunk = makeShared<BytesChunk>();
                         exceptionPduChunk->setBytes(exceptionPdu);
                         auto exceptionPkt = new Packet("exceptionPkt");
-                        exceptionPkt->insertAtBack(chunk);
+                        exceptionPkt->insertAtBack(exceptionPduChunk);
                         sendBack(exceptionPkt);
                         EV_ERROR << "不支持的功能码: 0x" << std::hex << (int)functionCode << std::dec << endl;
                         continue; // 不支持的功能码，跳过处理
                 }
 
-                auto requestPacket = new Packet("requestPacket");
-                EV_INFO << "创建请求数据包，初始ID: " << requestPacket->getId() << endl;
+                Packet *requestPacket = nullptr;
+                EV_INFO << "准备生成请求数据包" << endl;
 
                 if(dataLength != B(0)){
                     // 从队列中提取data（头部之后的二进制数据）
@@ -296,12 +296,17 @@ void TransitApp::handleMessage(cMessage *msg)
 
 
                 // 8. 获取目标socket并发送报文
-                EV_INFO << "将请求报文加入发送队列，目标socketId: " << targetSocketId << ", 报文ID: " << requestPacket->getId() << endl;
-                modbusMasterApp->addPacketToQueue(requestPacket, targetSocketId);
+                if (requestPacket) {
+                    EV_INFO << "将请求报文加入发送队列，目标socketId: " << targetSocketId << ", 报文ID: " << requestPacket->getId() << endl;
+                    // peek chunk BEFORE calling addPacketToQueue because addPacketToQueue deletes the Packet
+                    auto transitChunk = requestPacket->peekDataAt(B(0), requestPacket->getTotalLength());
+                    transitQueue->push(transitChunk);
+                    EV_INFO << "中转消息已成功加入发送队列" << endl;
 
-                auto transitChunk = requestPacket->peekDataAt(B(0), requestPacket->getTotalLength());
-                transitQueue->push(transitChunk);
-                EV_INFO << "中转消息已成功加入发送队列" << endl;
+                    // addPacketToQueue will delete the Packet, so call it after we've extracted the chunk
+                    modbusMasterApp->addPacketToQueue(requestPacket, targetSocketId);
+                    requestPacket = nullptr; // ownership moved/deleted
+                }
             }
             // 处理其他类型消息
             else {

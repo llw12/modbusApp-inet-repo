@@ -55,6 +55,7 @@ namespace inet{
           virtual void handleCrashOperation(LifecycleOperation *operation) override;
 
           virtual void close() override;
+          virtual void finish() override;
 
         public:
           OperatorStationApp2() {}

@@ -28,7 +28,9 @@ namespace inet
 
     OperatorStationApp2::~OperatorStationApp2()
     {
+        // only cancel/delete self messages here; do NOT call socket.destroy() in the destructor
         cancelAndDelete(timeoutMsg);
+        timeoutMsg = nullptr;
     }
 
     void OperatorStationApp2::initialize(int stage)
@@ -96,7 +98,9 @@ namespace inet
     {
         // 创建Modbus请求报文
         const auto& request = makeShared<OperatorRequest>();
-        request->setChunkLength(B(targetHostName.length() + 12));
+        EV_INFO << "targetHostName length: " << targetHostName.length() << endl;
+        request->setChunkLength(B(2 + targetHostName.length() + 12));
+        EV_INFO << "request length: " << request->getChunkLength() << endl;
         request->setTargetHostName(targetHostName.c_str());
         request->setTransactionId(++transactionId);  // 事务ID自增
         request->setProtocolId(0);  // Modbus TCP协议标识固定为0
@@ -117,11 +121,26 @@ namespace inet
             payload->setBytes(data);
             packet->insertAtBack(payload);
         }
+
+//        //测试是否由于TCP segement长度为奇数导致CRC校验失败
+//        auto testPayload = makeShared<ByteCountChunk>(B(1), '?');
+//        packet->insertAtBack(testPayload);
+
         packet->addTag<CreationTimeTag>()->setCreationTime(simTime());
-        sendPacket(packet);
+        // Only send if socket is fully connected. Otherwise delete packet to avoid undisposed objects.
+        if (socket.getState() == TcpSocket::CONNECTED) {
+            EV_INFO << "Sending modbusRequest packet, id=" << packet->getId() << ", socket state=" << socket.getState() << "\n";
+            sendPacket(packet);
+        }
+        else {
+            EV_WARN << "Socket not CONNECTED for modbusRequest (state=" << socket.getState() << "); dropping packet to avoid leak" << endl;
+            delete packet;
+        }
+
+        EV_INFO << "请求报文长度： " << packet->getByteLength() << " 字节" << endl;
 
         EV_INFO << "发送Modbus请求报文，事务ID：" << transactionId
-                << "，目标从站：" << (int)targetSlaveId << endl;
+                 << "，目标从站：" << (int)targetSlaveId << endl;
     }
 
     void OperatorStationApp2::handleTimer(cMessage *msg)
@@ -181,6 +200,24 @@ namespace inet
             simtime_t d = par("reconnectInterval");
             scheduleAfter(d, MSGKIND_CONNECT);
         }
+    }
+
+    void OperatorStationApp2::finish()
+    {
+        // try to destroy the socket while module and gates are still intact
+        try {
+            if (socket.getState() != TcpSocket::CLOSED && socket.getState() != TcpSocket::NOT_BOUND)
+                socket.destroy();
+        }
+        catch (const std::exception &e) {
+            EV_WARN << "socket.destroy() threw exception in finish(): " << e.what() << endl;
+        }
+        catch (...) {
+            EV_WARN << "socket.destroy() threw unknown exception in finish()" << endl;
+        }
+
+        // call base finish (collect stats etc.)
+        TcpAppBase::finish();
     }
 
     std::vector<std::string> OperatorStationApp2::splitBySpace(const std::string& str)
@@ -246,6 +283,3 @@ namespace inet
 
 
 }
-
-
-

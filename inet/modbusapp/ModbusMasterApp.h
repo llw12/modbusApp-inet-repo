@@ -41,7 +41,17 @@ protected:
 
 public:
     ModbusMasterApp() {}
-    virtual ~ModbusMasterApp() { cancelAndDelete(readTimer); }
+    virtual ~ModbusMasterApp() { 
+        // Ensure both timers are cancelled and deleted to avoid undisposed object warnings
+        if (readTimer) {
+            cancelAndDelete(readTimer);
+            readTimer = nullptr;
+        }
+        if (sendNextTimer) {
+            cancelAndDelete(sendNextTimer);
+            sendNextTimer = nullptr;
+        }
+    }
 
     // 生成读请求报文
     virtual Packet* createRequest(uint8_t slaveId, uint8_t functionCode,

@@ -28,7 +28,9 @@ namespace inet
 
     OperatorStationApp::~OperatorStationApp()
     {
+        // only cancel/delete self messages here; do NOT call socket.destroy() in the destructor
         cancelAndDelete(timeoutMsg);
+        timeoutMsg = nullptr;
     }
 
     void OperatorStationApp::initialize(int stage)
@@ -84,7 +86,28 @@ namespace inet
         header->setIfList(true);
         header->addTag<CreationTimeTag>()->setCreationTime(simTime());
         packet->insertAtFront(header);
-        sendPacket(packet);
+        // Only send if socket is fully connected. Avoid sending while CONNECTING or PEER_CLOSED
+        // because queued messages may remain undisposed if connection never establishes.
+        if (socket.getState() == TcpSocket::CONNECTED) {
+            EV_INFO << "Sending data packet, id=" << packet->getId() << ", socket state=" << socket.getState() << "\n";
+            try {
+                sendPacket(packet);
+            }
+            catch (const cRuntimeError &e) {
+                EV_ERROR << "sendPacket threw: " << e.what() << ", deleting packet to avoid leak" << endl;
+                delete packet;
+                throw;
+            }
+            catch (...) {
+                EV_ERROR << "sendPacket threw unknown exception, deleting packet to avoid leak" << endl;
+                delete packet;
+                throw;
+            }
+        }
+        else {
+            EV_WARN << "Socket not CONNECTED (state=" << socket.getState() << "); dropping packet to avoid leak" << endl;
+            delete packet;
+        }
     }
 
 
@@ -156,9 +179,25 @@ namespace inet
     }
 
     void OperatorStationApp::finish(){
+        // try to destroy the socket while module and gates are still intact
+        try {
+            if (socket.getState() != TcpSocket::CLOSED && socket.getState() != TcpSocket::NOT_BOUND)
+                socket.destroy();
+        }
+        catch (const std::exception &e) {
+            EV_WARN << "socket.destroy() threw exception in finish(): " << e.what() << endl;
+        }
+        catch (...) {
+            EV_WARN << "socket.destroy() threw unknown exception in finish()" << endl;
+        }
+
+        // save storage to json
         auto nodeName = this->getParentModule()->getFullName();
         std::string filePath = std::string("results/") + nodeName + std::string(".json");
         storage->saveToJson(filePath);
+
+        // call base finish for stats
+        TcpAppBase::finish();
     }
 
 }
