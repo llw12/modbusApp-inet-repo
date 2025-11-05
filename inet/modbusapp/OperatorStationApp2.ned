@@ -13,7 +13,8 @@ simple OperatorStationApp2 like IApp
         string connectAddress = default("");  // server address (may be symbolic)
         int connectPort = default(1000); // port number to connect to
         string modbusRequest;  // 格式示例："client[0] 02 06 0014 0003 00 01 00 02 00 03"
-    	double sendTime @unit(s);    // 发送时间，示例：1.5s
+    	string sendTime;    // 发送时间，示例：1.5s
+    	int seed;
         volatile double reconnectInterval @unit(s) = default(30s);  // if connection breaks, waits this much before trying to reconnect
         int timeToLive = default(-1); // if not -1, set the TTL (IPv4) or Hop Limit (IPv6) field of sent packets to this value
         int dscp = default(-1); // if not -1, set the DSCP (IPv4/IPv6) field of sent packets to this value

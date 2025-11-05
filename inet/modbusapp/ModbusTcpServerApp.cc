@@ -20,6 +20,7 @@
 #include "inet/transportlayer/contract/tcp/TcpCommand_m.h"
 #include <arpa/inet.h> // 用于htonl、htons等字节序转换函数
 #include "OperatorRequest_m.h"
+#include "inet/common/Simsignals.h"
 
 namespace inet {
 

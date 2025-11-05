@@ -16,21 +16,37 @@
 #include <cstdint>
 #include <stdexcept>
 #include <algorithm>
+#include <sstream>
+#include <limits>
 #include "inet/networklayer/common/L3AddressResolver.h"
+#include <cmath>
 
 namespace inet
 {
-    // 定时器触发类型定义
-    #define MSGKIND_CONNECT    0  // 定时器触发：发起TCP连接
-    #define MSGKIND_MODBUS_SEND 1 // 新增：发送Modbus请求报文
+    // 定时器触发类型不再使用kind，改为通过消息指针区分
 
     Define_Module(OperatorStationApp2);
 
     OperatorStationApp2::~OperatorStationApp2()
     {
         // only cancel/delete self messages here; do NOT call socket.destroy() in the destructor
-        cancelAndDelete(timeoutMsg);
-        timeoutMsg = nullptr;
+        if (connectMsg) { cancelAndDelete(connectMsg); connectMsg = nullptr; }
+        if (sendMsg) { cancelAndDelete(sendMsg); sendMsg = nullptr; }
+    }
+
+    static std::vector<std::string> splitBySemicolon(const std::string& s) {
+        std::vector<std::string> res;
+        std::string cur;
+        for (char c : s) {
+            if (c == ';') {
+                if (!cur.empty()) { res.push_back(cur); cur.clear(); }
+            }
+            else {
+                cur += c;
+            }
+        }
+        if (!cur.empty()) res.push_back(cur);
+        return res;
     }
 
     void OperatorStationApp2::initialize(int stage)
@@ -39,97 +55,185 @@ namespace inet
         if (stage == INITSTAGE_LOCAL) {
             earlySend = false;
 
-            //读取modbusRequest参数并解析
+            // 读取并解析modbusRequest（多条命令，;分隔）
             modbusRequest = par("modbusRequest").stdstringValue();
-            std::vector<std::string> parts = splitBySpace(modbusRequest);
-            if (parts.size() < 5) {  // 至少需要5个基础字段
-                throw cRuntimeError("modbusRequest格式错误，应为：targetHostName slaveId functionCode startAddress number [data...]");
+            auto reqItems = splitBySemicolon(modbusRequest);
+            if (reqItems.empty())
+                throw cRuntimeError("modbusRequest为空，至少需要一条命令");
+
+            commands.clear();
+            for (auto &item : reqItems) {
+                auto parts = splitBySpace(item);
+                if (parts.size() < 5) {
+                    throw cRuntimeError("modbusRequest格式错误，应为：targetHostName slaveId functionCode startAddress number [data...];... (当前项: %s)", item.c_str());
+                }
+                ModbusCommand cmd;
+                cmd.targetHostName = parts[0];
+                cmd.slaveId = hexStringToUint8_t(parts[1]);
+                cmd.functionCode = hexStringToUint8_t(parts[2]);
+                cmd.startAddress = hexStringToUint16_t(parts[3]);
+                cmd.quantity = hexStringToUint16_t(parts[4]);
+                for (size_t i = 5; i < parts.size(); ++i)
+                    cmd.data.push_back(hexStringToUint8_t(parts[i]));
+                commands.push_back(std::move(cmd));
             }
-            targetHostName = parts[0];
-            targetSlaveId = hexStringToUint8_t(parts[1]);
-            functionCode = hexStringToUint8_t(parts[2]);
-            targetStartAddress = hexStringToUint16_t(parts[3]);
-            number = hexStringToUint16_t(parts[4]);
 
-            // 解析可选的data字段
-            for (size_t i = 5; i < parts.size(); ++i) {
-                data.push_back(hexStringToUint8_t(parts[i]));
+            // 读取并解析sendTime（空格分隔，需与命令数量一致且单调递增）
+            sendTimeStr = par("sendTime").stdstringValue();
+            auto timeTokens = splitBySpace(sendTimeStr);
+            if (timeTokens.size() != commands.size()) {
+                throw cRuntimeError("sendTime数量(%zu)与modbusRequest命令数(%zu)不一致", timeTokens.size(), commands.size());
+            }
+            sendTimes.resize(timeTokens.size());
+            for (size_t i = 0; i < timeTokens.size(); ++i) {
+                // 将时间字符串按秒解析
+                double sec = std::stod(timeTokens[i]);
+                if (sec < 0.0)
+                    throw cRuntimeError("sendTime不能为负数 (index=%zu, value=%s)", i, timeTokens[i].c_str());
+                sendTimes[i] = SimTime(sec, SIMTIME_S);
+                if (i > 0 && !(sendTimes[i] > sendTimes[i-1])) {
+                    throw cRuntimeError("sendTime必须严格递增 (index=%zu, value=%s)", i, timeTokens[i].c_str());
+                }
             }
 
-            // 新增：读取sendTime参数
-            sendTime = par("sendTime");
-            if (sendTime < SIMTIME_ZERO) {
-                throw cRuntimeError("sendTime不能为负数");
+            seed = par("seed").intValue();
+
+            // 读取seed并初始化可重复性随机数引擎
+            if (seed != 0) {
+                rng.seed(seed);
+
+                // 计算每条命令的随机扰动与实际发送时间
+                actualTimes.resize(sendTimes.size());
+                for (size_t i = 0; i < sendTimes.size(); ++i) {
+                    simtime_t lower(0), upper(0);
+                    if (sendTimes.size() == 1) {
+                        // 仅一条命令：不添加扰动
+                        lower = SIMTIME_ZERO;
+                        upper = SIMTIME_ZERO;
+                    }
+                    else if (i == 0) {
+                        simtime_t dNext = sendTimes[1] - sendTimes[0];
+                        lower = SIMTIME_ZERO;
+                        upper = dNext / 10;
+                    }
+                    else if (i == sendTimes.size() - 1) {
+                        simtime_t dPrev = sendTimes[i-1] - sendTimes[i]; // 负数
+                        lower = dPrev / 10; // 负向扰动
+                        upper = SIMTIME_ZERO;
+                    }
+                    else {
+                        simtime_t dPrev = sendTimes[i-1] - sendTimes[i]; // 负数
+                        simtime_t dNext = sendTimes[i+1] - sendTimes[i]; // 正数
+                        lower = dPrev / 10;
+                        upper = dNext / 10;
+                    }
+
+                    // 将上下界转换为皮秒刻度的整数，确保后续产生的抖动严格落在 (lower, upper) 内
+                    long long lowerPs = (long long) llround(lower.inUnit(SIMTIME_PS));
+                    long long upperPs = (long long) llround(upper.inUnit(SIMTIME_PS));
+
+                    simtime_t jitter = SIMTIME_ZERO;
+                    if (upperPs - lowerPs > 1) {
+                        // 在 (lowerPs, upperPs) 之间选择一个整数皮秒（严格不含端点）
+                        std::uniform_int_distribution<long long> dist(0, (upperPs - lowerPs - 2));
+                        long long k = dist(rng);
+                        long long jPs = lowerPs + 1 + k;
+                        jitter = SimTime((double)jPs, SIMTIME_PS);
+                    }
+                    else {
+                        // 无法满足严格不含端点的范围，退化：不加扰动，同时提示
+                        EV_WARN << "扰动范围过小，无法满足严格不含端点 (i=" << i << ")，将不添加扰动" << endl;
+                        jitter = SIMTIME_ZERO;
+                    }
+
+                    actualTimes[i] = sendTimes[i] + jitter;
+                }
+
+            }
+            else {
+                // 若未提供seed，则不偏移
+                actualTimes.resize(sendTimes.size());
+                for (size_t i = 0; i < sendTimes.size(); ++i){
+                    actualTimes[i] = sendTimes[i];
+                }
+                EV_WARN << "未提供seed参数，发送时间将不添加随机扰动";
             }
 
 
-            timeoutMsg = new cMessage("timer");
+            // 生成发送顺序（按actualTimes排序）
+            scheduleOrder.resize(actualTimes.size());
+            for (size_t i = 0; i < scheduleOrder.size(); ++i) scheduleOrder[i] = i;
+            std::sort(scheduleOrder.begin(), scheduleOrder.end(), [&](size_t a, size_t b){
+                if (actualTimes[a] == actualTimes[b]) return a < b;
+                return actualTimes[a] < actualTimes[b];
+            });
+            nextSendIdx = 0;
+
+            // 创建定时器
+            connectMsg = new cMessage("connectTimer");
+            sendMsg = new cMessage("sendTimer");
         }
     }
 
     void OperatorStationApp2::handleStartOperation(LifecycleOperation *operation)
     {
         simtime_t now = simTime();
-
-        // 调度首次连接事件
-        if (timeoutMsg) {
-            timeoutMsg->setKind(MSGKIND_CONNECT);
-            scheduleAt(now, timeoutMsg);
-        }
+        if (connectMsg && !connectMsg->isScheduled())
+            scheduleAt(now, connectMsg);
     }
 
     void OperatorStationApp2::handleStopOperation(LifecycleOperation *operation)
     {
-        cancelEvent(timeoutMsg);
+        if (connectMsg) cancelEvent(connectMsg);
+        if (sendMsg) cancelEvent(sendMsg);
         if (socket.getState() == TcpSocket::CONNECTED || socket.getState() == TcpSocket::CONNECTING || socket.getState() == TcpSocket::PEER_CLOSED)
             close();
     }
 
     void OperatorStationApp2::handleCrashOperation(LifecycleOperation *operation)
     {
-        cancelEvent(timeoutMsg);
+        if (connectMsg) cancelEvent(connectMsg);
+        if (sendMsg) cancelEvent(sendMsg);
         if (operation->getRootModule() != getContainingNode(this))
             socket.destroy();
     }
 
 
-    // 发送OperatorRequest报文
-    void OperatorStationApp2::sendModbusRequest()
+    // 发送OperatorRequest报文（按索引）
+    void OperatorStationApp2::sendModbusRequest(size_t index)
     {
+        if (index >= commands.size()) return;
+        const auto &cmd = commands[index];
+
         // 创建Modbus请求报文
         const auto& request = makeShared<OperatorRequest>();
-        EV_INFO << "targetHostName length: " << targetHostName.length() << endl;
-        request->setChunkLength(B(2 + targetHostName.length() + 12));
+        EV_INFO << "targetHostName length: " << cmd.targetHostName.length() << endl;
+        request->setChunkLength(B(2 + cmd.targetHostName.length() + 12));
         EV_INFO << "request length: " << request->getChunkLength() << endl;
-        request->setTargetHostName(targetHostName.c_str());
+        request->setTargetHostName(cmd.targetHostName.c_str());
         request->setTransactionId(++transactionId);  // 事务ID自增
         request->setProtocolId(0);  // Modbus TCP协议标识固定为0
         // 计算长度：从slaveId到数据的总字节数
-        request->setLength(1 + 1 + 2 + 2 + data.size());  // slaveId(1) + funcCode(1) + startAddr(2) + quantity(2) + data
-        request->setSlaveId(targetSlaveId);
-        request->setFunctionCode(functionCode);
-        request->setStartAddress(targetStartAddress);
-        request->setQuantity(number);
-
+        request->setLength(1 + 1 + 2 + 2 + cmd.data.size());  // slaveId(1) + funcCode(1) + startAddr(2) + quantity(2) + data
+        request->setSlaveId(cmd.slaveId);
+        request->setFunctionCode(cmd.functionCode);
+        request->setStartAddress(cmd.startAddress);
+        request->setQuantity(cmd.quantity);
 
         // 封装为Packet并发送
         Packet *packet = new Packet("modbusRequest");
         packet->insertAtFront(request);
 
-        if(data.size() != 0){
+        if(!cmd.data.empty()){
             auto payload = makeShared<BytesChunk>();
-            payload->setBytes(data);
+            payload->setBytes(cmd.data);
             packet->insertAtBack(payload);
         }
-
-//        //测试是否由于TCP segement长度为奇数导致CRC校验失败
-//        auto testPayload = makeShared<ByteCountChunk>(B(1), '?');
-//        packet->insertAtBack(testPayload);
 
         packet->addTag<CreationTimeTag>()->setCreationTime(simTime());
         // Only send if socket is fully connected. Otherwise delete packet to avoid undisposed objects.
         if (socket.getState() == TcpSocket::CONNECTED) {
-            EV_INFO << "Sending modbusRequest packet, id=" << packet->getId() << ", socket state=" << socket.getState() << "\n";
+            EV_INFO << "Sending modbusRequest packet, id=" << packet->getId() << ", socket state=" << socket.getState() << "; idx=" << index << "\n";
             sendPacket(packet);
         }
         else {
@@ -140,20 +244,31 @@ namespace inet
         EV_INFO << "请求报文长度： " << packet->getByteLength() << " 字节" << endl;
 
         EV_INFO << "发送Modbus请求报文，事务ID：" << transactionId
-                 << "，目标从站：" << (int)targetSlaveId << endl;
+                 << "，目标从站：" << (int)cmd.slaveId << ", 计划时间=" << sendTimes[index] << ", 当前时间=" << actualTimes[index] << "偏移" << sendTimes[index]-actualTimes[index] << endl;
     }
 
     void OperatorStationApp2::handleTimer(cMessage *msg)
     {
-        switch (msg->getKind()) {
-            case MSGKIND_CONNECT:
-                connect();
-                break;
-            case MSGKIND_MODBUS_SEND:  // 处理Modbus请求发送
-                sendModbusRequest();
-                break;
-            default:
-                throw cRuntimeError("未知定时器类型: kind=%d", msg->getKind());
+        if (msg == connectMsg) {
+            connect();
+        }
+        else if (msg == sendMsg) {
+            // 发送下一条
+            if (nextSendIdx < scheduleOrder.size()) {
+                size_t idx = scheduleOrder[nextSendIdx];
+                sendModbusRequest(idx);
+                nextSendIdx++;
+                // 安排下一条
+                if (nextSendIdx < scheduleOrder.size()) {
+                    size_t nextIdx = scheduleOrder[nextSendIdx];
+                    simtime_t t = actualTimes[nextIdx];
+                    simtime_t now = simTime();
+                    scheduleAt(t > now ? t : now, sendMsg);
+                }
+            }
+        }
+        else {
+            throw cRuntimeError("未知定时器消息");
         }
     }
 
@@ -162,17 +277,17 @@ namespace inet
         TcpAppBase::socketEstablished(socket);
 
         if (!earlySend) {
-            // 连接建立后调度Modbus请求发送（确保在连接建立后发送）
-            simtime_t now = simTime();
-            simtime_t actualSendTime = std::max(sendTime, now);  // 确保不早于当前时间
-            if (timeoutMsg) {
-                if (timeoutMsg->isScheduled()) {
-                    cancelEvent(timeoutMsg);
+            // 连接建立后调度第一次Modbus请求发送（确保在连接建立后发送）
+            if (sendMsg) {
+                if (sendMsg->isScheduled()) cancelEvent(sendMsg);
+                if (nextSendIdx < scheduleOrder.size()) {
+                    size_t idx = scheduleOrder[nextSendIdx];
+                    simtime_t t = actualTimes[idx];
+                    simtime_t when = t > simTime() ? t : simTime();
+                    scheduleAt(when, sendMsg);
+                    EV_INFO << "已调度Modbus请求在 " << when << " 发送 (index=" << idx << ")" << endl;
                 }
-                timeoutMsg->setKind(MSGKIND_MODBUS_SEND);
-                scheduleAt(actualSendTime, timeoutMsg);
-                EV_INFO << "已调度Modbus请求在 " << actualSendTime << " 发送" << endl;
-             }
+            }
         }
     }
 
@@ -180,12 +295,14 @@ namespace inet
     void OperatorStationApp2::socketDataArrived(TcpSocket *socket, Packet *msg, bool urgent)
     {
         EV_INFO << "收到服务器回复报文" << endl;
+        // Forward to base to update packetsRcvd/bytesRcvd, emit signal, and delete the packet
+        TcpAppBase::socketDataArrived(socket, msg, urgent);
     }
 
     void OperatorStationApp2::close()
     {
         TcpAppBase::close();
-        cancelEvent(timeoutMsg);
+        if (sendMsg) cancelEvent(sendMsg);
     }
 
     void OperatorStationApp2::socketClosed(TcpSocket *socket)
@@ -196,9 +313,9 @@ namespace inet
     void OperatorStationApp2::socketFailure(TcpSocket *socket, int code)
     {
         TcpAppBase::socketFailure(socket, code);
-        if (timeoutMsg) {
+        if (connectMsg) {
             simtime_t d = par("reconnectInterval");
-            scheduleAfter(d, MSGKIND_CONNECT);
+            scheduleAt(simTime() + d, connectMsg);
         }
     }
 

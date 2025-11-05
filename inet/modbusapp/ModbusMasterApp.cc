@@ -2,6 +2,7 @@
 #include "TransitApp.h"
 #include "inet/common/ProtocolTag_m.h"
 #include "inet/common/packet/chunk/ByteCountChunk.h"
+#include "inet/common/TimeTag_m.h"
 
 namespace inet {
 
@@ -427,6 +428,7 @@ Packet* ModbusMasterApp::createRequest(uint8_t slaveId, uint8_t functionCode,
 
     pkt->insertAtFront(header);
     pkt->insertAtBack(pduChunk);
+    pkt->addTag<CreationTimeTag>()->setCreationTime(simTime());
 
 
 
@@ -519,67 +521,67 @@ Packet* ModbusMasterApp::createRequest(uint8_t slaveId, uint8_t functionCode,
             }
             int currentBits = bits.size();
             int padding = (8 - (currentBits % 8)) % 8;
-            if (padding > 0) {
-                EV_INFO << "线圈数据比特数不足8的倍数，补充" << padding << "个0（总长度变为" << currentBits + padding << "）" << endl;
-                bits.insert(bits.begin(), padding, false);
+            for (int i = 0; i < padding; ++i) bits.push_back(false);
+
+            // 每8位打包成一个字节
+            std::vector<uint8_t> packedBytes;
+            for (size_t i = 0; i < bits.size(); i += 8) {
+                uint8_t byte = 0;
+                for (int j = 0; j < 8; ++j) {
+                    if (bits[i + j]) byte |= (1 << j);
+                }
+                packedBytes.push_back(byte);
             }
 
-            // 构建数据部分（包含字节计数和线圈数据）
-            auto bitsChunk = makeShared<BitsChunk>();
-            bitsChunk->setBits(bits);
-            dataLength = bits.size() / 8;  // 字节数 = 总比特数 / 8
-            pdu.push_back(dataLength);  // 添加字节计数（紧跟在数量后）
+            // 添加字节数
+            pdu.push_back(packedBytes.size());
+            // 添加打包后的数据
+            for (uint8_t b : packedBytes) pdu.push_back(b);
 
-            // 合并PDU头部和线圈数据
-            auto sequence = makeShared<SequenceChunk>();
-            tempChunk->setBytes(pdu);
-
-            sequence->insertAtBack(tempChunk);
-            sequence->insertAtBack(bitsChunk);
-            pduChunk = sequence;
-            break;
-        }
-        case 0x10: {  // 用{}隔离作用域，避免与0x0F的quantityLow/High冲突
-            EV_INFO << "处理寄存器操作（功能码0x" << std::hex << (int)functionCode << std::dec << "）数据" << endl;
-
-            if (data.size() != quantity * 2) {  // 0x10写入多寄存器，每个寄存器2字节
-                EV_ERROR << "寄存器操作数据长度错误（功能码0x" << std::hex<< (int)functionCode << std::dec
-                         << "）：预期" << quantity*2 << "字节，实际" << data.size() << "字节" << endl;
-                throw cRuntimeError("Invalid data length for register operation");
-            }
-            // 添加数量的高8位和低8位
-            uint8_t quantityLow = quantity & 0x00ff;  // 作用域限制在当前case内，无重定义
-            uint8_t quantityHigh = (quantity >> 8) & 0x00ff;
-            pdu.push_back(quantityHigh);
-            pdu.push_back(quantityLow);
-
-            // 添加数据字节计数和数据本身
-            dataLength = data.size();  // 数据总字节数（= quantity*2）
-            pdu.push_back(dataLength);
-            // 错误点：需逐个添加data中的字节，不能直接push_back整个vector
-            for (uint8_t byte : data) {
-                pdu.push_back(byte);
-            }
+            dataLength = packedBytes.size() + 3; // 2字节数量 + 1字节字节数 + 数据
 
             tempChunk->setBytes(pdu);
             pduChunk = tempChunk;
             break;
         }
-        default: {  // 用{}隔离作用域
-           EV_ERROR << "Unsupported function code: " << (int)functionCode << endl;
-           delete pkt;  // 避免内存泄漏
-           return nullptr;
+        case 0x10: {  // 用{}隔离作用域
+            EV_INFO << "处理寄存器操作（功能码0x" << std::hex << (int)functionCode << std::dec << "）数据" << endl;
+
+            if (data.size() != quantity * 2) {
+                EV_ERROR << "寄存器操作数据长度错误（功能码0x" << std::hex << (int)functionCode << std::dec
+                         << "）：预期" << quantity*2 << "字节，实际" << data.size() << "字节" << endl;
+                throw cRuntimeError("Invalid data length for registers operation");
+            }
+
+            uint8_t quantityLow = quantity & 0x00ff;
+            uint8_t quantityHigh = (quantity >> 8) & 0x00ff;
+            pdu.push_back(quantityHigh);
+            pdu.push_back(quantityLow);
+            pdu.push_back(quantity * 2);  // 数据字节数
+            for (uint8_t byte : data) {
+                pdu.push_back(byte);
+            }
+            dataLength = quantity * 2 + 3; // 2字节数量 + 1字节字节数 + 数据
+
+            tempChunk->setBytes(pdu);
+            pduChunk = tempChunk;
+            break;
+        }
+        default: {
+            EV_ERROR << "不支持的功能码：0x" << std::hex << (int)functionCode << std::dec << endl;
+            throw cRuntimeError("Unsupported function code");
         }
     }
 
-    // 计算Modbus头部的长度字段（PDU总长度 = 功能码(1) + 后续字节数）
-    header->setLength((pduChunk->getChunkLength().get())/8 + 1);  // 减去功能码的1字节
+    // 计算长度字段并设置到头部
+    header->setLength(1 /*slaveId*/ + pduChunk->getChunkLength().get());
 
+    // 插入头部和PDU到Packet
     pkt->insertAtFront(header);
     pkt->insertAtBack(pduChunk);
+    pkt->addTag<CreationTimeTag>()->setCreationTime(simTime());
 
-    EV_INFO << "packet总长度：" << pkt->getDataLength()  << endl;
-    EV_INFO << "created packet ID：" << pkt->getId()  << endl;
+    EV_INFO << "create packet end" << endl;
 
     return pkt;
 }

@@ -16,6 +16,7 @@
 #include <fstream>
 #include "inet/common/lifecycle/NodeStatus.h"
 #include "inet/networklayer/common/InterfaceTable.h"
+#include "inet/common/TimeTag_m.h"
 
 namespace inet {
 
@@ -270,6 +271,7 @@ void ModbusSlaveApp::sendModbusResponse(const Ptr<const ModbusHeader>& requestHe
     auto pduChunk = makeShared<BytesChunk>();
     pduChunk->setBytes(responsePdu);
     responsePacket->insertAtBack(pduChunk);
+    responsePacket->addTag<CreationTimeTag>()->setCreationTime(simTime());
 
     auto& tags = check_and_cast<ITaggedObject *>(responsePacket)->getTags();
     tags.addTagIfAbsent<DispatchProtocolReq>()->setProtocol(&Protocol::tcp);
@@ -278,6 +280,7 @@ void ModbusSlaveApp::sendModbusResponse(const Ptr<const ModbusHeader>& requestHe
     send(responsePacket, "socketOut");
     bytesSent += responsePacket->getTotalLength().get();
     responsesSent++;
+    emit(packetSentSignal, responsePacket);
 }
 
 void ModbusSlaveApp::sendExceptionResponse(const Ptr<const ModbusHeader>& requestHeader, uint8_t functionCode, uint8_t exceptionCode, int connId)
