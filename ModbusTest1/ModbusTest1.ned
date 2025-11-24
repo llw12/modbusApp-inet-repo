@@ -10,6 +10,7 @@ network ModbusTest1 extends TsnNetworkBase
         int numClients;
     submodules:
         operatorStation: TsnDevice {
+           	numEthInterfaces = 2;
             @display("p=494,71");
         }
         switch1: TsnSwitch {
@@ -25,8 +26,8 @@ network ModbusTest1 extends TsnNetworkBase
             @display("p=652,329,r,80");
         }
     connections allowunconnected:
-        operatorStation.ethg++ <--> EthernetLink <--> switch1.ethg++;
-        operatorStation.ethg++ <--> EthernetLink <--> switch2.ethg++;
+        operatorStation.ethg[0] <--> EthernetLink <--> switch1.ethg++;
+        operatorStation.ethg[1] <--> EthernetLink <--> switch2.ethg++;
         switch1.ethg++ <--> EthernetLink <--> switch2.ethg++;
         switch1.ethg++ <--> EthernetLink <--> server.ethg++;
         switch2.ethg++ <--> EthernetLink <--> server.ethg++;
