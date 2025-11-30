@@ -19,6 +19,8 @@ namespace inet{
     {
         protected:
           ModbusStorage* storage = new ModbusStorage;
+          // 新增：接收缓冲区，用于组装可能被分片的ModbusStorage消息
+          std::vector<uint8_t> recvBuffer; 
           cMessage *timeoutMsg = nullptr;
           bool earlySend = false; // if true, don't wait with sendRequest() until established()
           simtime_t startTime;

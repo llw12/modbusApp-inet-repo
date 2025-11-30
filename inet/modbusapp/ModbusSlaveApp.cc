@@ -263,6 +263,8 @@ void ModbusSlaveApp::sendModbusResponse(const Ptr<const ModbusHeader>& requestHe
     responseHeader->setProtocolId(0);
     responseHeader->setLength(1 + responsePdu.size()); // 1字节从站ID + PDU长度
     responseHeader->setSlaveId(requestHeader->getSlaveId());
+    // 添加创建时间标签到头部chunk
+    responseHeader->addTag<CreationTimeTag>()->setCreationTime(simTime());
 
     // 构建响应包
     Packet* responsePacket = new Packet("ModbusResponse", TCP_C_SEND);
@@ -270,7 +272,10 @@ void ModbusSlaveApp::sendModbusResponse(const Ptr<const ModbusHeader>& requestHe
     responsePacket->insertAtBack(responseHeader);
     auto pduChunk = makeShared<BytesChunk>();
     pduChunk->setBytes(responsePdu);
+    // 为PDU chunk添加创建时间标签（冗余，增强兼容性）
+    pduChunk->addTag<CreationTimeTag>()->setCreationTime(simTime());
     responsePacket->insertAtBack(pduChunk);
+    // 在Packet层也添加创建时间标签
     responsePacket->addTag<CreationTimeTag>()->setCreationTime(simTime());
 
     auto& tags = check_and_cast<ITaggedObject *>(responsePacket)->getTags();

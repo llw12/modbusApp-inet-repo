@@ -3,6 +3,7 @@
 #include "inet/common/ProtocolTag_m.h"
 #include "inet/common/packet/chunk/ByteCountChunk.h"
 #include "inet/common/TimeTag_m.h"
+#include "inet/common/Simsignals.h"
 
 namespace inet {
 
@@ -246,6 +247,10 @@ void ModbusMasterApp::socketDataArrived(TcpSocket *socket, Packet *msg, bool urg
     }
 
     try {
+        packetsRcvd++;
+        bytesRcvd += msg->getByteLength();
+        emit(packetReceivedSignal, msg);
+        EV_INFO << "Received " << msg << " from " << socket->getRemoteAddress() << endl;
         // 1. 获取连接标识并将收到的数据加入队列
         int socketId = socket->getSocketId();
         ChunkQueue& queue = socketQueue[socketId]; // 假设socketQueue已初始化
@@ -308,6 +313,8 @@ void ModbusMasterApp::socketDataArrived(TcpSocket *socket, Packet *msg, bool urg
 
                     transitResponse->insertAtFront(responseHeader);
                     transitResponse->insertAtBack(responsePdu);
+                    // Add creation time so the receiver can compute dataAge
+                    transitResponse->addTag<CreationTimeTag>()->setCreationTime(simTime());
 
                     transitApp->sendBack(transitResponse);
                     transitQueue->pop<ModbusHeader>();
@@ -331,8 +338,6 @@ void ModbusMasterApp::socketDataArrived(TcpSocket *socket, Packet *msg, bool urg
             if (!isResponseValid) {
                 EV_ERROR << "Invalid response: transactionId or slaveId mismatch with request." << endl;
 
-//                delete requestHeader;
-//                delete requestPdu;
                 continue;
             }
 
@@ -360,8 +365,9 @@ void ModbusMasterApp::socketDataArrived(TcpSocket *socket, Packet *msg, bool urg
         EV_ERROR << "Error processing received data: " << e.what() << endl;
     }
 
-    // 7. 调用父类方法处理统计和资源释放
-    ModbusTcpAppBase::socketDataArrived(socket, msg, urgent);
+//    // 7. 调用父类方法处理统计和资源释放
+//    ModbusTcpAppBase::socketDataArrived(socket, msg, urgent);
+    delete msg;
 }
 void ModbusMasterApp::addPacketToQueue(Packet* pkt, int socketId){
 
@@ -410,6 +416,8 @@ Packet* ModbusMasterApp::createRequest(uint8_t slaveId, uint8_t functionCode,
     header->setProtocolId(0x0000); // Modbus TCP协议标识
     header->setLength(6); // 后续字节数（slaveId + functionCode + 4字节参数）
     header->setSlaveId(slaveId);
+    // Tag header chunk for end-to-end delay robustness
+    header->addTag<CreationTimeTag>()->setCreationTime(simTime());
 
     std::vector<uint8_t> pdu;
     pdu.push_back(functionCode);
@@ -450,6 +458,8 @@ Packet* ModbusMasterApp::createRequest(uint8_t slaveId, uint8_t functionCode,
     header->setTransactionId(transactionId++);
     header->setProtocolId(0x0000);
     header->setSlaveId(slaveId);
+    // Tag header chunk for end-to-end delay robustness
+    header->addTag<CreationTimeTag>()->setCreationTime(simTime());
 
     std::vector<uint8_t> pdu;  // 存储PDU字节流（元素为uint8_t）
     pdu.push_back(functionCode);
@@ -574,7 +584,7 @@ Packet* ModbusMasterApp::createRequest(uint8_t slaveId, uint8_t functionCode,
     }
 
     // 计算长度字段并设置到头部
-    header->setLength(1 /*slaveId*/ + pduChunk->getChunkLength().get());
+    header->setLength(1 /*slaveId*/ + pduChunk->getChunkLength().get()/8);
 
     // 插入头部和PDU到Packet
     pkt->insertAtFront(header);

@@ -245,6 +245,8 @@ void TransitApp::handleMessage(cMessage *msg)
                         exceptionPduChunk->setBytes(exceptionPdu);
                         auto exceptionPkt = new Packet("exceptionPkt");
                         exceptionPkt->insertAtBack(exceptionPduChunk);
+                        // Tag the packet's creation time so receivers can compute dataAge
+                        exceptionPkt->addTag<CreationTimeTag>()->setCreationTime(simTime());
                         sendBack(exceptionPkt);
                         EV_ERROR << "不支持的功能码: 0x" << std::hex << (int)functionCode << std::dec << endl;
                         continue; // 不支持的功能码，跳过处理

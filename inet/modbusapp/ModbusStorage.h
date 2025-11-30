@@ -78,39 +78,54 @@ public:
 
     // 析构函数：逐层释放动态内存（避免内存泄漏）
     ~ModbusStorage() {
-        // 遍历所有连接，释放从站及寄存器组资源
+        clear();
+    }
+
+    // 新增：清理当前所有动态分配资源，安全复位
+    void clear() {
         for (auto& conn : connectArray) {
             if (conn.slaves != nullptr) {
-                // 释放每个从站的寄存器组资源
                 for (int slaveIdx = 0; slaveIdx < conn.numSlave; slaveIdx++) {
                     MSMapping& currSlave = conn.slaves[slaveIdx];
-
-                    // 释放线圈组（bitGroup）
+                    // 释放线圈组
                     if (currSlave.bitGroup != nullptr) {
-                        delete[] currSlave.bitGroup->data;  // 先释放数据数组
-                        delete currSlave.bitGroup;          // 再释放寄存器组结构体
+                        for (int i = 0; i < currSlave.numBitGroup; ++i) {
+                            delete[] currSlave.bitGroup[i].data;
+                        }
+                        delete[] currSlave.bitGroup;
+                        currSlave.bitGroup = nullptr;
                     }
-                    // 释放离散输入组（inputBitGroup）
+                    // 释放离散输入组
                     if (currSlave.inputBitGroup != nullptr) {
-                        delete[] currSlave.inputBitGroup->data;
-                        delete currSlave.inputBitGroup;
+                        for (int i = 0; i < currSlave.numInputBitGroup; ++i) {
+                            delete[] currSlave.inputBitGroup[i].data;
+                        }
+                        delete[] currSlave.inputBitGroup;
+                        currSlave.inputBitGroup = nullptr;
                     }
-                    // 释放保持寄存器组（registerGroup）
+                    // 释放保持寄存器组
                     if (currSlave.registerGroup != nullptr) {
-                        delete[] currSlave.registerGroup->data;
-                        delete currSlave.registerGroup;
+                        for (int i = 0; i < currSlave.numRegisterGroup; ++i) {
+                            delete[] currSlave.registerGroup[i].data;
+                        }
+                        delete[] currSlave.registerGroup;
+                        currSlave.registerGroup = nullptr;
                     }
-                    // 释放输入寄存器组（inputRegisterGroup）
+                    // 释放输入寄存器组
                     if (currSlave.inputRegisterGroup != nullptr) {
-                        delete[] currSlave.inputRegisterGroup->data;
-                        delete currSlave.inputRegisterGroup;
+                        for (int i = 0; i < currSlave.numInputRegisterGroup; ++i) {
+                            delete[] currSlave.inputRegisterGroup[i].data;
+                        }
+                        delete[] currSlave.inputRegisterGroup;
+                        currSlave.inputRegisterGroup = nullptr;
                     }
                 }
-                delete[] conn.slaves;  // 释放从站数组
-                conn.slaves = nullptr; // 避免野指针
+                delete[] conn.slaves;
+                conn.slaves = nullptr;
             }
         }
-        // vector自动清理自身元素，无需额外操作
+        connectArray.clear();
+        numconnect = 0;
     }
 
     // ------------------------------
@@ -350,6 +365,8 @@ public:
         if (!storage) {
             throw cRuntimeError("deserializeModbusStorage: storage is null");
         }
+        // 反序列化前先清理旧数据，避免内存泄漏
+        storage->clear();
         size_t offset = 0; // 跟踪当前读取位置
 
         // 读取连接总数
@@ -501,9 +518,50 @@ public:
         return buffer;
     }
 
+    // 新增：带总长度前缀的序列化（前4字节：totalLen，网络序）
+    std::vector<uint8_t> serializeModbusStorageWithLength(ModbusStorage* storage) {
+        std::vector<uint8_t> body = serializeModbusStorage(storage);
+        std::vector<uint8_t> buffer;
+        int totalLen = body.size();
+        int netLen = htonl(totalLen);
+        const uint8_t *lenBytes = reinterpret_cast<const uint8_t*>(&netLen);
+        buffer.insert(buffer.end(), lenBytes, lenBytes + sizeof(netLen));
+        buffer.insert(buffer.end(), body.begin(), body.end());
+        return buffer;
+    }
 
-
-
+    // 新增：尝试按长度前缀解析一个完整ModbusStorage消息（支持增量接收）
+    // buffer: 可能包含多个消息或半包；consumed 返回已消费字节数；成功返回true
+    bool tryDeserializeModbusStorage(ModbusStorage* storage, const std::vector<uint8_t>& buffer, size_t& consumed) {
+        consumed = 0;
+        if (!storage)
+            return false;
+        // 需要至少4字节的长度前缀
+        if (buffer.size() < sizeof(int))
+            return false;
+        int netLen;
+        memcpy(&netLen, buffer.data(), sizeof(int));
+        int totalLen = ntohl(netLen);
+        if (totalLen < 0) {
+            EV_WARN << "tryDeserializeModbusStorage: invalid totalLen=" << totalLen << endl;
+            return false;
+        }
+        // 等待完整消息到达
+        if (buffer.size() < sizeof(int) + static_cast<size_t>(totalLen))
+            return false;
+        // 提取消息体
+        std::vector<uint8_t> body(buffer.begin() + sizeof(int), buffer.begin() + sizeof(int) + totalLen);
+        // 反序列化（捕获缓冲区下溢异常，避免中断仿真）
+        try {
+            deserializeModbusStorage(storage, body);
+        }
+        catch (const cRuntimeError &e) {
+            EV_ERROR << "tryDeserializeModbusStorage: deserialization failed: " << e.what() << endl;
+            return false; // 不消费，等待外部处理或丢弃策略
+        }
+        consumed = sizeof(int) + totalLen;
+        return true;
+    }
 
     /**
      * 将ModbusStorage数据保存为JSON文件，格式与ModbusStorageConfig.json一致

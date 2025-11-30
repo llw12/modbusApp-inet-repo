@@ -228,8 +228,14 @@ void ModbusSlaveHILApp::handleMessage(cMessage *msg)
                 // 6. 构建响应包并返回
                 Packet *responsePacket = new Packet("ModbusResponse", TCP_C_SEND);
                 responsePacket->addTag<SocketReq>()->setSocketId(connId);
+                // 为头部chunk添加创建时间标签
+                responseHeader->addTag<CreationTimeTag>()->setCreationTime(simTime());
                 responsePacket->insertAtBack(responseHeader);
+                // 为PDU chunk添加创建时间标签
+                responsePdu->addTag<CreationTimeTag>()->setCreationTime(simTime());
                 responsePacket->insertAtBack(responsePdu);
+                // 在Packet层同样添加创建时间标签
+                responsePacket->addTag<CreationTimeTag>()->setCreationTime(simTime());
 
                 // 设置socket标识，确保正确路由
                 sendBack(responsePacket);
@@ -264,8 +270,3 @@ void ModbusSlaveHILApp::finish()
 }
 
 } // namespace inet
-
-
-
-
-

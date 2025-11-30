@@ -222,6 +222,8 @@ namespace inet
 
         // 封装为Packet并发送
         Packet *packet = new Packet("modbusRequest");
+        // Tag both the request chunk and the Packet for robust dataAge recording
+        request->addTag<CreationTimeTag>()->setCreationTime(simTime());
         packet->insertAtFront(request);
 
         if(!cmd.data.empty()){

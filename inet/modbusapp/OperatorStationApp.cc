@@ -84,7 +84,9 @@ namespace inet
         Packet *packet = new Packet("data");
         header->setSequenceNumber(++sequenceNumber);
         header->setIfList(true);
+        // Tag both the chunk and the Packet to maximize compatibility with dataAge(packetReceived)
         header->addTag<CreationTimeTag>()->setCreationTime(simTime());
+        packet->addTag<CreationTimeTag>()->setCreationTime(simTime());
         packet->insertAtFront(header);
         // Only send if socket is fully connected. Avoid sending while CONNECTING or PEER_CLOSED
         // because queued messages may remain undisposed if connection never establishes.
@@ -153,9 +155,34 @@ namespace inet
     void OperatorStationApp::socketDataArrived(TcpSocket *socket, Packet *msg, bool urgent)
     {
         auto data = msg->peekDataAsBytes();
-        storage->deserializeModbusStorage(storage, data->getBytes());
+        const auto &bytes = data->getBytes();
+        // 累积到接收缓冲区（处理分片/粘包）
+        recvBuffer.insert(recvBuffer.end(), bytes.begin(), bytes.end());
+
+        size_t consumed = 0;
+        int messagesParsed = 0;
+        // 可能存在多个消息连续到达，循环解析
+        while (storage->tryDeserializeModbusStorage(storage, recvBuffer, consumed)) {
+            messagesParsed++;
+            // 移除已消费字节
+            recvBuffer.erase(recvBuffer.begin(), recvBuffer.begin() + consumed);
+            EV_INFO << "成功反序列化ModbusStorage消息，长度=" << consumed
+                    << ", 剩余未处理字节=" << recvBuffer.size() << endl;
+        }
+        if (messagesParsed == 0) {
+            EV_DEBUG << "当前缓冲区字节数=" << recvBuffer.size()
+                     << "，尚未形成完整ModbusStorage消息，继续等待后续分片" << endl;
+        }
+
+        // Debug: check CreationTimeTag presence for endToEndDelay calculation
+        if (auto ct = msg->findTag<CreationTimeTag>()) {
+            EV_INFO << "[E2E DEBUG] Received packet creationTime=" << ct->getCreationTime() << ", age=" << (simTime() - ct->getCreationTime()) << endl;
+        }
+        else {
+            EV_WARN << "[E2E DEBUG] Received packet WITHOUT CreationTimeTag" << endl;
+        }
         TcpAppBase::socketDataArrived(socket, msg, urgent);
-        EV_INFO << "收到服务器回复报文" << endl;
+        EV_INFO << "收到服务器回复报文 (messagesParsed=" << messagesParsed << ")" << endl;
     }
 
     void OperatorStationApp::close()

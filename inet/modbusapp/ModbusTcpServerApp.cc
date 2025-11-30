@@ -133,9 +133,9 @@ void ModbusTcpServerApp::handleMessage(cMessage *msg)
                     continue;
                 }
 
-                // 序列化modbusStorage到BytesChunk
+                // 序列化modbusStorage到BytesChunk（使用长度前缀，支持分片重组）
                 auto payload = makeShared<BytesChunk>();
-                payload->setBytes(modbusStorage->serializeModbusStorage(modbusStorage));
+                payload->setBytes(modbusStorage->serializeModbusStorageWithLength(modbusStorage));
                 if (!payload) {
                     EV_ERROR << "Failed to serialize ModbusStorage" << endl;
                     delete packet;
@@ -145,6 +145,8 @@ void ModbusTcpServerApp::handleMessage(cMessage *msg)
                 // 创建回复包
                 Packet *outPacket = new Packet("ModbusStorageReply", TCP_C_SEND);
                 outPacket->addTag<SocketReq>()->setSocketId(connId);
+                // Tag both chunk and Packet for robust dataAge recording
+                payload->addTag<CreationTimeTag>()->setCreationTime(simTime());
                 outPacket->insertAtBack(payload);
                 outPacket->addTag<CreationTimeTag>()->setCreationTime(simTime());
 
