@@ -467,6 +467,10 @@ Packet* ModbusMasterApp::createRequest(uint8_t slaveId, uint8_t functionCode,
     uint8_t startAddressHigh = (startAddress >> 8) & 0x00ff;
     pdu.push_back(startAddressHigh);
     pdu.push_back(startAddressLow);
+    uint8_t quantityLow = quantity & 0x00ff;
+    uint8_t quantityHigh = (quantity >> 8) & 0x00ff;
+    pdu.push_back(quantityHigh);
+    pdu.push_back(quantityLow);
 
     ChunkPtr pduChunk;
     uint8_t dataLength;  // 注意：此处声明的变量作用域为整个函数，避免在case内重复定义
@@ -577,6 +581,49 @@ Packet* ModbusMasterApp::createRequest(uint8_t slaveId, uint8_t functionCode,
             pduChunk = tempChunk;
             break;
         }
+        case 0x17: { // Read/Write Multiple Registers
+            EV_INFO << "处理读写多个寄存器（功能码0x" << std::hex << (int)functionCode << std::dec << "）数据" << endl;
+            // 由于现有签名只包含一个startAddress/quantity以及data，
+            // 约定：startAddress/quantity 表示读取起始地址和数量；
+            // data 的前两个字节表示写入起始地址（高字节、低字节），
+            // 第3-4字节表示写入数量（高字节、低字节），
+            // 其后紧跟写入数据（长度为 writeQuantity*2）。
+            if (data.size() < 4) {
+                EV_ERROR << "功能码0x17数据至少需要4字节用于写起始地址与数量" << endl;
+                throw cRuntimeError("Invalid data layout for function 0x17");
+            }
+            uint16_t writeStart = (uint16_t(data[0]) << 8) | uint16_t(data[1]);
+            uint16_t writeQty   = (uint16_t(data[2]) << 8) | uint16_t(data[3]);
+            size_t expectedBytes = size_t(writeQty) * 2;
+            if (data.size() < 4 + expectedBytes) {
+                EV_ERROR << "功能码0x17写入数据长度不足：期望" << expectedBytes << "字节，实际" << (data.size() - 4) << "字节" << endl;
+                throw cRuntimeError("Invalid write data length for function 0x17");
+            }
+
+            // 修正：0x17 应当重新构造PDU，不包含前面已加入的startAddress字节
+            std::vector<uint8_t> pdu17;
+            pdu17.push_back(functionCode);
+            // read start & qty
+            pdu17.push_back((startAddress >> 8) & 0x00ff);
+            pdu17.push_back(startAddress & 0x00ff);
+            pdu17.push_back((quantity >> 8) & 0x00ff);
+            pdu17.push_back(quantity & 0x00ff);
+            // write start & qty
+            pdu17.push_back((writeStart >> 8) & 0x00ff);
+            pdu17.push_back(writeStart & 0x00ff);
+            pdu17.push_back((writeQty >> 8) & 0x00ff);
+            pdu17.push_back(writeQty & 0x00ff);
+            // byte count
+            pdu17.push_back(writeQty * 2);
+            // append write data
+            for (size_t i = 0; i < expectedBytes; ++i) {
+                pdu17.push_back(data[4 + i]);
+            }
+
+            tempChunk->setBytes(pdu17);
+            pduChunk = tempChunk;
+            break;
+        }
         default: {
             EV_ERROR << "不支持的功能码：0x" << std::hex << (int)functionCode << std::dec << endl;
             throw cRuntimeError("Unsupported function code");
@@ -585,7 +632,6 @@ Packet* ModbusMasterApp::createRequest(uint8_t slaveId, uint8_t functionCode,
 
     // 计算长度字段并设置到头部
     header->setLength(1 /*slaveId*/ + pduChunk->getChunkLength().get()/8);
-
     // 插入头部和PDU到Packet
     pkt->insertAtFront(header);
     pkt->insertAtBack(pduChunk);
@@ -593,6 +639,53 @@ Packet* ModbusMasterApp::createRequest(uint8_t slaveId, uint8_t functionCode,
 
     EV_INFO << "create packet end" << endl;
 
+    return pkt;
+}
+
+// New helper to build 0x17 request with explicit parameters
+Packet* ModbusMasterApp::createReadWriteMultipleRegistersRequest(
+        uint8_t slaveId,
+        uint16_t readStartAddress,
+        uint16_t readQuantity,
+        uint16_t writeStartAddress,
+        uint16_t writeQuantity,
+        const std::vector<uint8_t>& writeData) {
+    Enter_Method("createReadWriteMultipleRegistersRequest");
+    if (writeData.size() != size_t(writeQuantity) * 2) {
+        throw cRuntimeError("writeData length must be writeQuantity*2 for function 0x17");
+    }
+    auto pkt = new Packet("ModbusRequest");
+    auto header = makeShared<ModbusHeader>();
+    header->setTransactionId(transactionId++);
+    header->setProtocolId(0x0000);
+    header->setSlaveId(slaveId);
+    header->addTag<CreationTimeTag>()->setCreationTime(simTime());
+
+    std::vector<uint8_t> pdu;
+    pdu.push_back(0x17);
+    // read start & qty
+    pdu.push_back((readStartAddress >> 8) & 0x00ff);
+    pdu.push_back(readStartAddress & 0x00ff);
+    pdu.push_back((readQuantity >> 8) & 0x00ff);
+    pdu.push_back(readQuantity & 0x00ff);
+    // write start & qty
+    pdu.push_back((writeStartAddress >> 8) & 0x00ff);
+    pdu.push_back(writeStartAddress & 0x00ff);
+    pdu.push_back((writeQuantity >> 8) & 0x00ff);
+    pdu.push_back(writeQuantity & 0x00ff);
+    // byte count
+    pdu.push_back(writeQuantity * 2);
+    // data
+    for (auto b : writeData) pdu.push_back(b);
+
+    auto pduChunk = makeShared<BytesChunk>();
+    pduChunk->setBytes(pdu);
+
+    header->setLength(1 /*slaveId*/ + pduChunk->getChunkLength().get()/8);
+
+    pkt->insertAtFront(header);
+    pkt->insertAtBack(pduChunk);
+    pkt->addTag<CreationTimeTag>()->setCreationTime(simTime());
     return pkt;
 }
 
@@ -641,6 +734,13 @@ void ModbusMasterApp::parseAndStoreResponse(TcpSocket *socket, const inet::Ptr<c
             if (requestBytes.size() < 5) throw std::invalid_argument("多个写操作请求格式不完整");
             startAddress = (requestBytes[1] << 8) | requestBytes[2];
             quantity = (requestBytes[3] << 8) | requestBytes[4];
+        }
+        else if (reqFuncCode == 0x17) {
+            // 读写多个寄存器请求格式：func(1) + readStart(2) + readQty(2) + writeStart(2) + writeQty(2) + byteCount(1) + data
+            if (requestBytes.size() < 9) throw std::invalid_argument("读写多个寄存器请求格式不完整");
+            startAddress = (requestBytes[1] << 8) | requestBytes[2];
+            quantity     = (requestBytes[3] << 8) | requestBytes[4];
+            // 写入部分可根据需要解析，但对响应处理只需读部分
         }
         else {
             EV_WARN << "parseAndStoreResponse: 不支持的功能码 " << std::hex << (int)reqFuncCode << std::dec << endl;
@@ -860,6 +960,50 @@ void ModbusMasterApp::parseAndStoreResponse(TcpSocket *socket, const inet::Ptr<c
                     }
                 }
             }
+        }
+    }
+    // 10. 处理读写多个寄存器响应（0x17）
+    else if (respFuncCode == 0x17) {
+        // 响应格式：func(1) + byteCount(1) + readData(byteCount)
+        if (responseBytes.size() < 2) {
+            EV_ERROR << "parseAndStoreResponse: 读写多个寄存器响应缺少数据长度字段" << endl;
+            return;
+        }
+        uint8_t dataLength = responseBytes[1];
+        if (responseBytes.size() < 2 + dataLength) {
+            EV_ERROR << "parseAndStoreResponse: 读写多个寄存器响应数据不完整（期望" << (2 + dataLength)
+                     << "字节，实际" << responseBytes.size() << "字节）" << endl;
+            return;
+        }
+        const uint8_t* dataStart = &responseBytes[2];
+        // 将读到的数据按照保持寄存器（0x03）的格式存储
+        // quantity 表示读取寄存器数量（在请求中解析得到）
+        if (dataLength != quantity * 2) {
+            EV_WARN << "parseAndStoreResponse: 读写多个寄存器响应数据长度与读取数量不匹配" << endl;
+            // 尝试以 dataLength/2 作为数量继续处理
+            quantity = dataLength / 2;
+        }
+
+        std::vector<inet::RegisterGroup<int16_t>*> regGroups;
+        for (int i = 0; i < targetSlave->numRegisterGroup; i++) {
+            regGroups.push_back(&targetSlave->registerGroup[i]);
+        }
+        for (uint16_t i = 0; i < quantity; i++) {
+            uint16_t currAddr = startAddress + i;
+            inet::RegisterGroup<int16_t>* targetGroup = nullptr;
+            for (auto group : regGroups) {
+                if (currAddr >= group->startAddress && currAddr < group->startAddress + group->number) {
+                    targetGroup = group;
+                    break;
+                }
+            }
+            if (!targetGroup) {
+                EV_WARN << "parseAndStoreResponse: 地址" << currAddr << "不在任何16位寄存器组中" << endl;
+                continue;
+            }
+            uint16_t offset = currAddr - targetGroup->startAddress;
+            int16_t value = int16_t(dataStart[2*i]) << 8 | uint16_t(dataStart[2*i + 1]);
+            targetGroup->data[offset] = value;
         }
     }
 

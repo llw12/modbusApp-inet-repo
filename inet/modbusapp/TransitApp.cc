@@ -231,6 +231,29 @@ void TransitApp::handleMessage(cMessage *msg)
                         dataLength = B(quantity * 2); // 每个元素2字节
                         EV_INFO << "功能码对应数据长度: " << dataLength << " (每个元素2字节)" << endl;
                         break;
+                    case 0x17: {
+                        // 读取完整的0x17 PDU长度：func(1)+readStart(2)+readQty(2)+writeStart(2)+writeQty(2)+byteCount(1)+writeData
+                        if (queue.getLength() < B(10)) {
+                            EV_ERROR << "队列数据不足以解析0x17头部（至少10字节）" << endl;
+                            std::vector<uint8_t> exceptionPdu{ uint8_t(0x17 | 0x80), uint8_t(0x03) };
+                            auto exceptionPduChunk = makeShared<BytesChunk>();
+                            exceptionPduChunk->setBytes(exceptionPdu);
+                            auto exceptionPkt = new Packet("exceptionPkt");
+                            exceptionPkt->insertAtBack(exceptionPduChunk);
+                            exceptionPkt->addTag<CreationTimeTag>()->setCreationTime(simTime());
+                            sendBack(exceptionPkt);
+                            continue;
+                        }
+                        // peek前10字节以获取byteCount
+                        const auto& hdr10 = queue.peek<BytesChunk>(B(10));
+                        auto h = hdr10->getBytes();
+                        // 校验功能码与读参数（可选，不做严格核对）；关键是获取byteCount
+                        uint8_t byteCount = h[9];
+                        B totalLen = B(10 + byteCount);
+                        dataLength = totalLen;
+                        EV_INFO << "功能码0x17完整PDU长度: " << dataLength << " (10字节头 + " << (int)byteCount << "字节写数据)" << endl;
+                        break;
+                    }
                     case 0x01:
                     case 0x02:
                     case 0x03:
@@ -261,7 +284,32 @@ void TransitApp::handleMessage(cMessage *msg)
                     if (queue.getLength() >= dataLength) {
                         // 提取指定长度的字节数据
                         const auto& bytesChunk = queue.pop<BytesChunk>(dataLength);
-                        data = bytesChunk->getBytes(); // 转换为vector<uint8_t>
+                        auto raw = bytesChunk->getBytes();
+                        // 针对0x17：raw是完整PDU，需要转换为ModbusMasterApp::createRequest所需的data格式（仅写起始/写数量/写数据）
+                        if (functionCode == 0x17) {
+                            if (raw.size() < 10) {
+                                EV_ERROR << "0x17 PDU长度不足，无法解析" << endl;
+                                continue;
+                            }
+                            // 提取写起始和写数量
+                            uint16_t writeStart = (uint16_t(raw[5]) << 8) | uint16_t(raw[6]);
+                            uint16_t writeQty   = (uint16_t(raw[7]) << 8) | uint16_t(raw[8]);
+                            uint8_t  byteCount  = raw[9];
+                            if (byteCount != writeQty * 2 || raw.size() != size_t(10 + byteCount)) {
+                                EV_ERROR << "0x17 PDU字节数与写数量不匹配，或总长度不匹配" << endl;
+                                continue;
+                            }
+                            // 构造data：[writeStart(2), writeQty(2), writeData]
+                            data.clear();
+                            data.push_back((writeStart >> 8) & 0xFF);
+                            data.push_back(writeStart & 0xFF);
+                            data.push_back((writeQty >> 8) & 0xFF);
+                            data.push_back(writeQty & 0xFF);
+                            data.insert(data.end(), raw.begin() + 10, raw.end());
+                        }
+                        else {
+                            data = raw; // 其他功能码保持原样
+                        }
                         bytesRcvd += data.size(); // 更新接收字节数统计
                         EV_INFO << "成功提取数据，长度: " << data.size() << "字节, 累计接收字节数: " << bytesRcvd << endl;
                     }

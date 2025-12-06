@@ -213,27 +213,73 @@ namespace inet
         request->setTargetHostName(cmd.targetHostName.c_str());
         request->setTransactionId(++transactionId);  // 事务ID自增
         request->setProtocolId(0);  // Modbus TCP协议标识固定为0
-        // 计算长度：从slaveId到数据的总字节数
-        request->setLength(1 + 1 + 2 + 2 + cmd.data.size());  // slaveId(1) + funcCode(1) + startAddr(2) + quantity(2) + data
         request->setSlaveId(cmd.slaveId);
         request->setFunctionCode(cmd.functionCode);
         request->setStartAddress(cmd.startAddress);
         request->setQuantity(cmd.quantity);
 
+        // 根据功能码构造有效载荷与长度
+        std::vector<uint8_t> payloadBytes;
+        if (cmd.functionCode == 0x17) {
+            // 约定：cmd.startAddress/quantity 为读起始与读数量；
+            // cmd.data: [writeStartHigh, writeStartLow, writeQtyHigh, writeQtyLow, writeData...]
+            if (cmd.data.size() < 4) {
+                throw cRuntimeError("功能码0x17数据至少需要4字节（写起始、写数量）");
+            }
+            uint16_t writeStart = (uint16_t(cmd.data[0]) << 8) | uint16_t(cmd.data[1]);
+            uint16_t writeQty   = (uint16_t(cmd.data[2]) << 8) | uint16_t(cmd.data[3]);
+            size_t expectedBytes = size_t(writeQty) * 2;
+            if (cmd.data.size() < 4 + expectedBytes) {
+                throw cRuntimeError("功能码0x17写入数据长度不足：期望%zu字节，实际%zu字节", expectedBytes, cmd.data.size() - 4);
+            }
+            // 构造PDU：func(1)+readStart(2)+readQty(2)+writeStart(2)+writeQty(2)+byteCount(1)+writeData
+            payloadBytes.reserve(1 + 2 + 2 + 2 + 2 + 1 + expectedBytes);
+            payloadBytes.push_back(0x17);
+            payloadBytes.push_back((cmd.startAddress >> 8) & 0xFF);
+            payloadBytes.push_back(cmd.startAddress & 0xFF);
+            payloadBytes.push_back((cmd.quantity >> 8) & 0xFF);
+            payloadBytes.push_back(cmd.quantity & 0xFF);
+            payloadBytes.push_back((writeStart >> 8) & 0xFF);
+            payloadBytes.push_back(writeStart & 0xFF);
+            payloadBytes.push_back((writeQty >> 8) & 0xFF);
+            payloadBytes.push_back(writeQty & 0xFF);
+            payloadBytes.push_back(uint8_t(writeQty * 2));
+            for (size_t i = 0; i < expectedBytes; ++i) {
+                payloadBytes.push_back(cmd.data[4 + i]);
+            }
+            // 修正length字段：从slaveId到PDU的总长度（slaveId(1)+PDU长度）
+            request->setLength(1 + payloadBytes.size());
+        }
+        else {
+            // 非0x17：沿用原有逻辑，长度= slaveId(1)+func(1)+startAddr(2)+quantity(2)+data.size()
+            request->setLength(1 + 1 + 2 + 2 + cmd.data.size());
+            // 如果存在data，直接按原设计附加
+            if (!cmd.data.empty()) {
+                payloadBytes.reserve(1 + 2 + 2 + cmd.data.size());
+                payloadBytes.push_back(cmd.functionCode);
+                payloadBytes.push_back((cmd.startAddress >> 8) & 0xFF);
+                payloadBytes.push_back(cmd.startAddress & 0xFF);
+                payloadBytes.push_back((cmd.quantity >> 8) & 0xFF);
+                payloadBytes.push_back(cmd.quantity & 0xFF);
+                for (auto b : cmd.data) payloadBytes.push_back(b);
+            }
+            else {
+                // 无data时，仅功能码+地址+数量由上面的字段体现，Payload可为空，由服务端按头部解析
+            }
+        }
+
         // 封装为Packet并发送
         Packet *packet = new Packet("modbusRequest");
-        // Tag both the request chunk and the Packet for robust dataAge recording
         request->addTag<CreationTimeTag>()->setCreationTime(simTime());
         packet->insertAtFront(request);
 
-        if(!cmd.data.empty()){
+        if (!payloadBytes.empty()) {
             auto payload = makeShared<BytesChunk>();
-            payload->setBytes(cmd.data);
+            payload->setBytes(payloadBytes);
             packet->insertAtBack(payload);
         }
 
         packet->addTag<CreationTimeTag>()->setCreationTime(simTime());
-        // Only send if socket is fully connected. Otherwise delete packet to avoid undisposed objects.
         if (socket.getState() == TcpSocket::CONNECTED) {
             EV_INFO << "Sending modbusRequest packet, id=" << packet->getId() << ", socket state=" << socket.getState() << "; idx=" << index << "\n";
             sendPacket(packet);

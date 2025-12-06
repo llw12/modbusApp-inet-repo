@@ -70,6 +70,7 @@ class INET_API ModbusSlaveApp : public cSimpleModule, public LifecycleUnsupporte
     virtual void handleWriteSingleRegister(const Ptr<const ModbusHeader>& requestHeader, const uint8_t* pduData, uint16_t pduLength, int connId);
     virtual void handleWriteMultipleCoils(const Ptr<const ModbusHeader>& requestHeader, const uint8_t* pduData, uint16_t pduLength, int connId);
     virtual void handleWriteMultipleRegisters(const Ptr<const ModbusHeader>& requestHeader, const uint8_t* pduData, uint16_t pduLength, int connId);
+    virtual void handleReadWriteMultipleRegisters(const Ptr<const ModbusHeader>& requestHeader, const uint8_t* pduData, uint16_t pduLength, int connId);
 };
 
 } // namespace inet

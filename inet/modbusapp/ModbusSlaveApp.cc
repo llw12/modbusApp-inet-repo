@@ -251,6 +251,7 @@ void ModbusSlaveApp::processModbusRequest(const Ptr<const ModbusHeader>& request
         case 0x06: handleWriteSingleRegister(requestHeader, pduData, pduLength, connId); break;
         case 0x0F: handleWriteMultipleCoils(requestHeader, pduData, pduLength, connId); break;
         case 0x10: handleWriteMultipleRegisters(requestHeader, pduData, pduLength, connId); break;
+        case 0x17: handleReadWriteMultipleRegisters(requestHeader, pduData, pduLength, connId); break; // 新增
         default: sendExceptionResponse(requestHeader, functionCode, 0x01, connId); // 非法功能
     }
 }
@@ -701,6 +702,75 @@ void ModbusSlaveApp::handleWriteMultipleRegisters(const Ptr<const ModbusHeader>&
     responsePdu.push_back(startAddr & 0xFF);
     responsePdu.push_back((quantity >> 8) & 0xFF);
     responsePdu.push_back(quantity & 0xFF);
+
+    sendModbusResponse(requestHeader, responsePdu, connId);
+}
+
+void ModbusSlaveApp::handleReadWriteMultipleRegisters(const Ptr<const ModbusHeader>& requestHeader, const uint8_t* pduData, uint16_t pduLength, int connId)
+{
+    // PDU格式：0x17 + 读起始(2) + 读数量(2) + 写起始(2) + 写数量(2) + 字节数(1) + 写数据(2*写数量)
+    if (pduLength < 11) { // 最小长度：1+2+2+2+2+1=10，但为避免越界读取写数据，要求>=11以便进入后续校验
+        sendExceptionResponse(requestHeader, 0x17, 0x03, connId);
+        return;
+    }
+
+    uint16_t readStart = ntohs(*(const uint16_t*)(pduData + 1));
+    uint16_t readQty   = ntohs(*(const uint16_t*)(pduData + 3));
+    uint16_t writeStart= ntohs(*(const uint16_t*)(pduData + 5));
+    uint16_t writeQty  = ntohs(*(const uint16_t*)(pduData + 7));
+    uint8_t  byteCount = pduData[9];
+
+    // Modbus规范限制：写数量1-121，读数量1-125
+    if (writeQty < 1 || writeQty > 121 || readQty < 1 || readQty > 125) {
+        sendExceptionResponse(requestHeader, 0x17, 0x03, connId);
+        return;
+    }
+    // 字节数必须等于写数量*2
+    if (byteCount != writeQty * 2) {
+        sendExceptionResponse(requestHeader, 0x17, 0x03, connId);
+        return;
+    }
+    // 验证PDU总长度
+    if (pduLength != 10 + byteCount) { // 1(func)+2+2+2+2+1 + byteCount
+        sendExceptionResponse(requestHeader, 0x17, 0x03, connId);
+        return;
+    }
+
+    // 查找目标从站
+    auto slave = findSlave(requestHeader->getSlaveId());
+    if (!slave) {
+        sendExceptionResponse(requestHeader, 0x17, 0x02, connId);
+        return;
+    }
+
+    // 先进行写寄存器
+    auto writeGroup = findRegisterGroup(slave->registerGroup, slave->numRegisterGroup, writeStart, writeQty);
+    if (!writeGroup) {
+        sendExceptionResponse(requestHeader, 0x17, 0x02, connId);
+        return;
+    }
+    for (uint16_t i = 0; i < writeQty; i++) {
+        uint16_t idx = writeStart + i - writeGroup->startAddress;
+        uint16_t value = ntohs(*(const uint16_t*)(pduData + 10 + 2*i));
+        writeGroup->data[idx] = value;
+    }
+
+    // 再读取寄存器并构造响应（读保持寄存器语义）
+    auto readGroup = findRegisterGroup(slave->registerGroup, slave->numRegisterGroup, readStart, readQty);
+    if (!readGroup) {
+        sendExceptionResponse(requestHeader, 0x17, 0x02, connId);
+        return;
+    }
+
+    std::vector<uint8_t> responsePdu;
+    responsePdu.push_back(0x17);
+    responsePdu.push_back(readQty * 2); // 字节数
+    for (uint16_t i = 0; i < readQty; i++) {
+        uint16_t idx = readStart + i - readGroup->startAddress;
+        uint16_t value = readGroup->data[idx];
+        responsePdu.push_back((value >> 8) & 0xFF);
+        responsePdu.push_back(value & 0xFF);
+    }
 
     sendModbusResponse(requestHeader, responsePdu, connId);
 }

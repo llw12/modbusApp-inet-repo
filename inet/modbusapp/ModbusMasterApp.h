@@ -58,6 +58,16 @@ public:
                                      uint16_t startAddress, uint16_t quantity);
     virtual Packet* createRequest(uint8_t slaveId, uint8_t functionCode,
                                      uint16_t startAddress, uint16_t quantity, const std::vector<uint8_t>& data);
+
+    // 新增：生成读写多个寄存器(0x17)请求的便捷方法
+    virtual Packet* createReadWriteMultipleRegistersRequest(
+        uint8_t slaveId,
+        uint16_t readStartAddress,
+        uint16_t readQuantity,
+        uint16_t writeStartAddress,
+        uint16_t writeQuantity,
+        const std::vector<uint8_t>& writeData);
+
     virtual void addPacketToQueue(Packet* pkt, int socketId);
     // 解析收到的响应报文并存储
     virtual void parseAndStoreResponse(TcpSocket *socket, const inet::Ptr<const BytesChunk>& requestPdu, const inet::Ptr<const ModbusHeader>& responseHeader, const inet::Ptr<const BytesChunk>& responsePdu);
